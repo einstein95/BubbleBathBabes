@@ -3,7 +3,7 @@
 all: rom.nes verify
 
 rom.o: bbb.asm
-	ca65 bbb.asm -o rom.o
+	ca65 bbb.asm -l rom.lst -o rom.o
 
 rom.nes: rom.o
 	ld65 rom.o -t nes -o rom.nes

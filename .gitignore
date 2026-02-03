@@ -1,2 +1,4 @@
-.o
-.nes
+rom.o
+rom.nes
+rom.lst
+.vscode

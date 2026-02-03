@@ -243,7 +243,7 @@ temp_var_cf     = $00CF
 temp_var_d0     = $00D0
 
 temp_var_d2     = $00D2
-temp_var_d3     = $00D3
+audio_track     = $00D3
 temp_var_d4     = $00D4
 temp_var_d5     = $00D5
 
@@ -402,7 +402,7 @@ temp_var_741 = $0741
 temp_var_745 = $0745
 temp_var_749 = $0749
 temp_var_74d = $074D
-temp_var_7a1 = $07A1
+song_state = $07A1
 temp_var_7a2 = $07A2
 temp_var_7a3 = $07A3
 
@@ -623,7 +623,7 @@ handle_game_input:
     bne @done
     
     ; Trigger game over sequence
-    jsr trigger_game_over
+    jsr stop_all_music
     
     ldx #$0B                    ; Default next mode
     lda game_var_91
@@ -1294,9 +1294,9 @@ _label_8476:
   lda a:temp_var_358,Y
   asl a
   tay
-  lda a:_data_f21b_indexed,Y
+  lda a:_data_f21b,Y
   sta a:temp_var_368,X
-  lda a:_data_f21c_indexed,Y
+  lda a:_data_f21b+1,Y
   sta a:temp_var_369,X
 _label_84a3:
   rts
@@ -1319,16 +1319,16 @@ _label_86a2:
   stx temp_var_1b
   asl a
   tay
-  lda a:_data_f235_indexed,Y
+  lda a:_data_f235,Y
   sta a:temp_var_388,X
-  lda a:_data_f236_indexed,Y
+  lda a:_data_f235+1,Y
   sta a:temp_var_398,X
   txa
   asl a
   tax
-  lda a:_data_f21b_indexed,Y
+  lda a:_data_f21b,Y
   sta a:temp_var_368,X
-  lda a:_data_f21c_indexed,Y
+  lda a:_data_f21b+1,Y
   sta a:temp_var_369,X
   rts
 
@@ -1363,12 +1363,38 @@ _label_84f6:
   rts
 
 _func_8511:
+  ; ------------------------------------------------------------
+  ; Load and (conditionally) adjust a 16-bit table entry from _data_fb83
+  ;
+  ; Input:
+  ;   A = index (byte) into _data_fb83 (0..n)
+  ;
+  ; Output:
+  ;   temp_var_20 = saved original index
+  ;   temp_var_19 = LOW  byte of the selected 16-bit entry
+  ;   temp_var_1a = HIGH byte of the selected 16-bit entry
+  ;
+  ; Description:
+  ;   The table at _data_fb83 stores little-endian 16-bit addresses (low,high).
+  ;   We multiply the index by two (ASL) to compute the word offset and
+  ;   load the two bytes. Callers then use temp_var_19/1a as a 16-bit value
+  ;   (e.g., they are written into sprite_flag for sprite placement).
+  ;
+  ;   After loading, the low byte is conditionally adjusted based on game
+  ;   state:
+  ;     - If game_var_68 == 0: return unchanged.
+  ;     - Else if game_state_var == 0: subtract 2 from the LOW byte
+  ;       (dec twice) -- note this only changes the low byte (no borrow to
+  ;       the high byte).
+  ;     - Otherwise: add $0E to the LOW byte (again, low-byte only).
+  ;   The adjusted pair is left in temp_var_19/1a for callers.
+  ; ------------------------------------------------------------
   sta temp_var_20
   asl a
   tax
-  lda a:_data_fb83_indexed,X
+  lda a:_data_fb83,X
   sta temp_var_19
-  lda a:_data_fb84_indexed,X
+  lda a:_data_fb83+1,X
   sta temp_var_1a
   lda game_var_68
   bne _label_8524
@@ -1468,16 +1494,16 @@ update_display_elements:
   tya
   asl a
   tay
-  lda a:_data_f235_indexed,Y
+  lda a:_data_f235,Y
   sta a:temp_var_388,X
-  lda a:_data_f236_indexed,Y
+  lda a:_data_f235+1,Y
   sta a:temp_var_398,X
   txa
   asl a
   tax
-  lda a:_data_f21b_indexed,Y
+  lda a:_data_f21b,Y
   sta a:temp_var_368,X
-  lda a:_data_f21c_indexed,Y
+  lda a:_data_f21b+1,Y
   sta a:temp_var_369,X
   rts
 
@@ -1565,7 +1591,7 @@ _label_865f:
   lda #$02
 
 _func_866e:
-  sta a:temp_var_d3
+  sta a:audio_track
   lda #$01
   sta a:temp_var_d2
   jsr _func_de4b
@@ -1573,7 +1599,7 @@ _func_866e:
   sta a:temp_var_d2
   rts
 _label_867f:
-  jsr _func_87bf
+  jsr _func_init_wave
   jsr _func_86fe
   lda joypad1_press
   and #$10
@@ -1725,13 +1751,13 @@ _label_87ac:
   sta temp_var_21
   rts
 
-_func_87bf:
+_func_init_wave:
   lda temp_var_6c
   and #$07
-  bne _label_87f8
+  bne @init_wave_skip
   lda temp_var_6d
   cmp #$04
-  bcs _label_87f8
+  bcs @init_wave_skip
   lda #$3F
   sta a:temp_var_1b0
   lda #$00
@@ -1743,32 +1769,32 @@ _func_87bf:
   lda temp_var_6d
   asl a
   tax
-  lda a:_data_bf93_indexed,X
+  lda a:_data_bf93,X
   sta a:temp_var_1b4
-  lda a:_data_bf94_indexed,X
+  lda a:_data_bf93+1,X
   sta a:temp_var_1b5
   lda #$00
   sta a:temp_var_1b6
   sta temp_var_6c
   inc temp_var_6d
-_label_87f8:
+@init_wave_skip:
   lda temp_var_6c
   cmp #$20
-  bcc _label_8811
+  bcc @init_wave_done
   lda temp_var_6d
   cmp #$05
-  bcs _label_8811
+  bcs @init_wave_done
   inc temp_var_6d
   ldx #$0C
-_label_8808:
-  lda a:_data_8812_indexed,X
+@init_wave_copy:
+  lda a:_data_init_wave_table,X
   sta a:temp_var_1b0,X
   dex
-  bpl _label_8808
-_label_8811:
+  bpl @init_wave_copy
+@init_wave_done:
   rts
 
-_data_8812_indexed:
+_data_init_wave_table:
 .byte $23, $08, $0f, $01, $fa, $90, $22, $e6, $13, $01, $09, $91, $00
 
 _label_881f:
@@ -1803,9 +1829,9 @@ _label_8845:
   ldx #$00
   jsr _func_8d8f
   ldx #$02
-  lda a:_data_be52_indexed,X
+  lda a:_data_be52,X
   sta temp_var_11
-  lda a:_data_be53_indexed,X
+  lda a:_data_be52+1,X
   sta temp_var_12
   jsr load_palette
   lda PPU_STATUS
@@ -1974,9 +2000,9 @@ _func_898b:
   lda temp_var_88
   asl a
   tax
-  lda a:_data_bac0_indexed,X
+  lda a:_data_bac0,X
   sta temp_var_11
-  lda a:_data_bac1_indexed,X
+  lda a:_data_bac0+1,X
   sta temp_var_12
   ldy temp_var_89
   lda (temp_var_11),Y
@@ -2562,16 +2588,16 @@ _func_8d9e:
   asl a
   tax
   pha
-  lda a:_data_be32_indexed,X
+  lda a:_data_be32,X
   sta temp_var_11
-  lda a:_data_be33_indexed,X
+  lda a:_data_be32+1,X
   sta temp_var_12
   jsr load_graphics_data
   pla
   tax
-  lda a:_data_be52_indexed,X
+  lda a:_data_be52,X
   sta temp_var_11
-  lda a:_data_be53_indexed,X
+  lda a:_data_be52+1,X
   sta temp_var_12
   jsr load_palette
   rts
@@ -2646,27 +2672,27 @@ _func_8e10:
   lda temp_var_69
   asl a
   tax
-  lda a:_data_8ef7_indexed,X
+  lda a:_data_8ef7,X
   sta temp_var_13
-  lda a:_data_8ef8_indexed,X
+  lda a:_data_8ef7+1,X
   sta temp_var_14
-  lda a:_data_8f2c_indexed,X
+  lda a:_data_8f2c,X
   sta a:temp_var_4e2,Y
   iny
-  lda a:_data_8f2d_indexed,X
+  lda a:_data_8f2c+1,X
   sta a:temp_var_4e2,Y
   iny
   lda temp_var_6a
   asl a
   tax
-  lda a:_data_8efb_indexed,X
+  lda a:_data_8efb,X
   sta temp_var_15
-  lda a:_data_8efc_indexed,X
+  lda a:_data_8efb+1,X
   sta z:$16
-  lda a:_data_8f30_indexed,X
+  lda a:_data_8f30,X
   sta a:temp_var_4e2,Y
   iny
-  lda a:_data_8f31_indexed,X
+  lda a:_data_8f30+1,X
   sta a:temp_var_4e2,Y
   iny
   rts
@@ -2760,19 +2786,13 @@ _data_8ef3_indexed:
 _data_8ef4_indexed:
 .byte $8e, $07, $8f
 
-_data_8ef7_indexed:
-.byte $0f
+_data_8ef7:
+.byte $0f, $8f, $14, $8f
 
-_data_8ef8_indexed:
-.byte $8f, $14, $8f
-
-_data_8efb_indexed:
-.byte $19
-
-_data_8efc_indexed:
-.byte $8f, $1e, $8f, $31, $50, $4c, $41, $59, $45, $52, $ff, $32, $50, $4c, $41, $59
-.byte $45, $52, $53, $54, $59, $50, $45, $41, $54, $59, $50, $45, $42, $42, $47, $4d
-.byte $40, $31, $42, $47, $4d, $40, $32, $53, $54, $41, $52, $54
+_data_8efb:
+.byte $19, $8f, $1e, $8f, $31, $50, $4c, $41, $59, $45, $52, $ff, $32, $50, $4c, $41
+.byte $59, $45, $52, $53, $54, $59, $50, $45, $41, $54, $59, $50, $45, $42, $42, $47
+.byte $4d, $40, $31, $42, $47, $4d, $40, $32, $53, $54, $41, $52, $54
 
 _data_8f28_indexed:
 .byte $34
@@ -2780,16 +2800,11 @@ _data_8f28_indexed:
 _data_8f29_indexed:
 .byte $8f, $44, $8f
 
-_data_8f2c_indexed:
-.byte $54
+_data_8f2c:
+.byte $54, $8f, $5e, $8f
 
-_data_8f2d_indexed:
-.byte $8f, $5e, $8f
-
-_data_8f30_indexed:
+_data_8f30:
 .byte $68
-
-_data_8f31_indexed:
 .byte $8f, $72, $8f, $48, $30, $48, $40, $48, $48, $48, $50, $48, $58, $48, $60, $48
 .byte $68, $48, $70, $48, $88, $48, $98, $48, $a0, $48, $a8, $48, $b0, $48, $b8, $48
 .byte $c0, $48, $c8, $78, $30, $78, $38, $78, $40, $78, $48, $78, $58, $78, $88, $78
@@ -2898,11 +2913,11 @@ _label_9191:
   lda temp_var_8e
   cmp #$80
   bcc _label_91be
-  jsr trigger_game_over
+  jsr stop_all_music
   lda #$01
   sta a:temp_var_d2
   lda #$07
-  sta a:temp_var_d3
+  sta a:audio_track
   jsr _func_de4b
   lda #$00
   sta a:temp_var_d2
@@ -3385,13 +3400,13 @@ _func_94e4:
   and #$0E
   sta z:$94
   tax
-  lda a:_data_f2e0_indexed,X
+  lda a:_data_f2e0,X
   sta temp_var_99
-  lda a:_data_f2e1_indexed,X
+  lda a:_data_f2e0+1,X
   sta z:$9A
-  lda a:_data_f35b_indexed,X
+  lda a:_data_f35b,X
   sta temp_var_19
-  lda a:_data_f35c_indexed,X
+  lda a:_data_f35b+1,X
   sta temp_var_1a
   lda temp_var_1b
   and #$0F
@@ -3893,9 +3908,9 @@ _label_986f:
   inc temp_var_21
   asl a
   tax
-  lda a:_data_f26b_indexed,X
+  lda a:_data_f26b,X
   sta temp_var_17
-  lda a:_data_f26c_indexed,X
+  lda a:_data_f26b+1,X
   sta temp_var_18
   tya
   jsr _func_8511
@@ -4190,7 +4205,7 @@ _label_9a6d:
   clc
   adc a:temp_var_38f
   sta a:$0390
-  lda a:_data_fce1_indexed,X
+  lda a:_data_fce0_indexed+1,X
   clc
   adc a:temp_var_39f
   sta a:$03A0
@@ -4292,9 +4307,9 @@ _label_9b36:
   sta temp_var_1b
   asl a
   tax
-  lda a:_data_f26b_indexed,X
+  lda a:_data_f26b,X
   sta temp_var_17
-  lda a:_data_f26c_indexed,X
+  lda a:_data_f26b+1,X
   sta temp_var_18
   jsr _func_85dc
   jsr _func_8535
@@ -4526,9 +4541,9 @@ _label_9cc6:
   clc
   adc temp_var_20
   tax
-  lda a:_data_fd16_indexed,X
+  lda a:_data_fd16,X
   sta temp_var_a1
-  lda a:_data_fd17_indexed,X
+  lda a:_data_fd16+1,X
   sta temp_var_a2
   lda #$00
   sta temp_var_a9
@@ -4565,9 +4580,9 @@ _label_9cf8:
 _label_9d1b:
   asl a
   tax
-  lda a:_data_f26b_indexed,X
+  lda a:_data_f26b,X
   sta temp_var_17
-  lda a:_data_f26c_indexed,X
+  lda a:_data_f26b+1,X
   sta temp_var_18
 _label_9d27:
   jsr _func_85dc
@@ -4843,9 +4858,9 @@ _label_9f05:
 _func_9f09:
   asl a
   tax
-  lda a:_data_f2c8_indexed,X
+  lda a:_data_f2c8,X
   sta temp_var_19
-  lda a:_data_f2c9_indexed,X
+  lda a:_data_f2c8+1,X
   sta temp_var_1a
   ldx #$00
 _label_9f17:
@@ -4876,9 +4891,9 @@ _label_9f2d:
   asl a
   asl a
   tax
-  lda a:_data_f26b_indexed,Y
+  lda a:_data_f26b,Y
   sta a:temp_var_302,X
-  lda a:_data_f26c_indexed,Y
+  lda a:_data_f26b+1,Y
   sta a:temp_var_303,X
   ldx temp_var_24
   inx
@@ -4995,10 +5010,10 @@ _label_9fed:
   bmi _label_a021
   asl a
   tay
-  lda a:_data_f26b_indexed,Y
+  lda a:_data_f26b,Y
   sta a:sprite_flag,X
   inx
-  lda a:_data_f26c_indexed,Y
+  lda a:_data_f26b+1,Y
   sta a:sprite_flag,X
   lda #$00
   beq _label_a02c
@@ -5380,11 +5395,11 @@ _label_a293:
   .word _label_a422
 
 _label_a2a6:
-  jsr trigger_game_over
+  jsr stop_all_music
   lda #$01
   sta a:temp_var_d2
   lda #$06
-  sta a:temp_var_d3
+  sta a:audio_track
   jsr _func_de4b
   lda #$00
   sta a:temp_var_d2
@@ -5513,9 +5528,9 @@ _label_a382:
   sta temp_var_1b
   asl a
   tax
-  lda a:_data_f26b_indexed,X
+  lda a:_data_f26b,X
   sta temp_var_17
-  lda a:_data_f26c_indexed,X
+  lda a:_data_f26b+1,X
   sta temp_var_18
   lda temp_var_24
   jsr _func_8511
@@ -5565,9 +5580,9 @@ _label_a3c5:
   sta a:temp_var_5db,X
   asl a
   tax
-  lda a:_data_f26b_indexed,X
+  lda a:_data_f26b,X
   sta temp_var_17
-  lda a:_data_f26c_indexed,X
+  lda a:_data_f26b+1,X
   sta temp_var_18
   lda temp_var_21
   jsr _func_8511
@@ -5593,11 +5608,11 @@ _label_a422:
   lda #$00
   sta temp_var_b8
   sta temp_var_b7
-  jsr trigger_game_over
+  jsr stop_all_music
   lda #$01
   sta a:temp_var_d2
   lda a:temp_var_6a
-  sta a:temp_var_d3
+  sta a:audio_track
   jsr _func_de4b
   lda #$00
   sta a:temp_var_d2
@@ -5663,13 +5678,13 @@ _label_a499:
   beq _label_a4ae
   lda a:_data_a4ed_indexed,X
   sta temp_var_19
-  lda a:_data_a4ee_indexed,X
+  lda a:_data_a4ed_indexed+1,X
   sta temp_var_1a
   jmp _label_a4b8
 _label_a4ae:
   lda a:_data_a4dc_indexed,X
   sta temp_var_19
-  lda a:_data_a4dd_indexed,X
+  lda a:_data_a4dc_indexed+1,X
   sta temp_var_1a
 _label_a4b8:
   ldy #$00
@@ -5694,16 +5709,14 @@ _label_a4d4:
   rts
 
 _data_a4dc_indexed:
-.byte $de
-
-_data_a4dd_indexed:
-.byte $a4, $27, $23, $e2, $a4, $03, $03, $60, $61, $62, $75, $74, $73, $7a, $7b, $7d
+.byte $de, $a4, $27, $23, $e2, $a4, $03, $03
+.byte $60, $61, $62, $75, $74, $73, $7a, $7b
+.byte $7d
 
 _data_a4ed_indexed:
-.byte $ef
-
-_data_a4ee_indexed:
-.byte $a4, $27, $23, $f3, $a4, $03, $03, $60, $d2, $d3, $75, $d1, $d0, $cd, $ce, $cf
+.byte $ef, $a4, $27, $23, $f3, $a4, $03, $03
+.byte $60, $d2, $d3, $75, $d1, $d0, $cd, $ce
+.byte $cf
 
 _func_a4fe:
   lda temp_var_52
@@ -6003,9 +6016,9 @@ _label_a6f1:
   inc temp_var_21
   asl a
   tax
-  lda a:_data_f26b_indexed,X
+  lda a:_data_f26b,X
   sta temp_var_17
-  lda a:_data_f26c_indexed,X
+  lda a:_data_f26b+1,X
   sta temp_var_18
   tya
   jsr _func_8511
@@ -6309,7 +6322,7 @@ _label_a903:
   clc
   adc a:temp_var_38a
   sta a:$038B
-  lda a:_data_fce1_indexed,X
+  lda a:_data_fce0_indexed+1,X
   clc
   adc a:temp_var_39a
   sta a:$039B
@@ -6409,9 +6422,9 @@ _label_a9ca:
   sta temp_var_1b
   asl a
   tax
-  lda a:_data_f26b_indexed,X
+  lda a:_data_f26b,X
   sta temp_var_17
-  lda a:_data_f26c_indexed,X
+  lda a:_data_f26b+1,X
   sta temp_var_18
   jsr _func_85dc
   jsr _func_8535
@@ -6474,9 +6487,9 @@ _label_aa38:
   lda temp_var_56
   asl a
   tax
-  lda a:_data_f429_indexed,X
+  lda a:_data_f429,X
   sta temp_var_37
-  lda a:_data_f42a_indexed,X
+  lda a:_data_f429+1,X
   sta temp_var_38
   lda game_var_68
   bne _label_aaa7
@@ -6551,11 +6564,11 @@ _label_aae6:
   jsr _func_8ee3
   jsr _func_b21f
   inc temp_var_66
-  jsr trigger_game_over
+  jsr stop_all_music
   lda #$01
   sta a:temp_var_d2
   lda temp_var_6a
-  sta a:temp_var_d3
+  sta a:audio_track
   jsr _func_de4b
   lda #$00
   sta a:temp_var_d2
@@ -6767,9 +6780,9 @@ _label_ac68:
   lda temp_var_56
   asl a
   tax
-  lda a:_data_f429_indexed,X
+  lda a:_data_f429,X
   sta temp_var_37
-  lda a:_data_f42a_indexed,X
+  lda a:_data_f429+1,X
   sta temp_var_38
   ldx temp_var_57
   lda a:_data_fccd_indexed,X
@@ -6817,17 +6830,17 @@ _label_accc:
   lda game_var_68
   asl a
   tax
-  lda a:_data_f674_indexed,X
+  lda a:_data_f674,X
   sta temp_var_11
-  lda a:_data_f675_indexed,X
+  lda a:_data_f674+1,X
   sta temp_var_12
   jsr load_graphics_data
   lda game_var_68
   asl a
   tax
-  lda a:_data_faff_indexed,X
+  lda a:_data_faff,X
   sta temp_var_11
-  lda a:_data_fb00_indexed,X
+  lda a:_data_faff+1,X
   sta temp_var_12
   jsr _func_84de
   lda game_var_68
@@ -6892,9 +6905,9 @@ _label_ad6f:
   clc
   adc temp_var_20
   tax
-  lda a:_data_fd16_indexed,X
+  lda a:_data_fd16,X
   sta temp_var_4a
-  lda a:_data_fd17_indexed,X
+  lda a:_data_fd16+1,X
   sta z:$4B
   lda #$00
   sta temp_var_52
@@ -6924,9 +6937,9 @@ _label_ad96:
 _label_adb9:
   asl a
   tax
-  lda a:_data_f26b_indexed,X
+  lda a:_data_f26b,X
   sta temp_var_17
-  lda a:_data_f26c_indexed,X
+  lda a:_data_f26b+1,X
   sta temp_var_18
 _label_adc5:
   jsr _func_85dc
@@ -7067,11 +7080,11 @@ _label_aea6:
   .word _label_b03d
 
 _label_aeb9:
-  jsr trigger_game_over
+  jsr stop_all_music
   lda #$01
   sta a:temp_var_d2
   lda #$06
-  sta a:temp_var_d3
+  sta a:audio_track
   jsr _func_de4b
   lda #$00
   sta a:temp_var_d2
@@ -7200,9 +7213,9 @@ _label_af9d:
   sta temp_var_1b
   asl a
   tax
-  lda a:_data_f26b_indexed,X
+  lda a:_data_f26b,X
   sta temp_var_17
-  lda a:_data_f26c_indexed,X
+  lda a:_data_f26b+1,X
   sta temp_var_18
   lda temp_var_24
   jsr _func_8511
@@ -7252,9 +7265,9 @@ _label_afe0:
   sta a:temp_var_400,X
   asl a
   tax
-  lda a:_data_f26b_indexed,X
+  lda a:_data_f26b,X
   sta temp_var_17
-  lda a:_data_f26c_indexed,X
+  lda a:_data_f26b+1,X
   sta temp_var_18
   lda temp_var_21
   jsr _func_8511
@@ -7280,11 +7293,11 @@ _label_b03d:
   lda #$00
   sta temp_var_63
   sta temp_var_62
-  jsr trigger_game_over
+  jsr stop_all_music
   lda #$01
   sta a:temp_var_d2
   lda temp_var_6a
-  sta a:temp_var_d3
+  sta a:audio_track
   jsr _func_de4b
   lda #$00
   sta a:temp_var_d2
@@ -7564,9 +7577,9 @@ _func_b21f:
   and #$0E
   sta temp_var_3d
   tax
-  lda a:_data_f35b_indexed,X
+  lda a:_data_f35b,X
   sta temp_var_19
-  lda a:_data_f35c_indexed,X
+  lda a:_data_f35b+1,X
   sta temp_var_1a
   lda temp_var_1b
   and #$0F
@@ -7591,9 +7604,9 @@ _label_b253:
 
 _func_b269:
   ldx temp_var_3d
-  lda a:_data_f2e0_indexed,X
+  lda a:_data_f2e0,X
   sta temp_var_42
-  lda a:_data_f2e1_indexed,X
+  lda a:_data_f2e0+1,X
   sta z:$43
   ldx #$00
   lda #$02
@@ -7770,9 +7783,9 @@ _label_b393:
   inc temp_var_22
   asl a
   tay
-  lda a:_data_f26b_indexed,Y
+  lda a:_data_f26b,Y
   sta temp_var_17
-  lda a:_data_f26c_indexed,Y
+  lda a:_data_f26b+1,Y
   sta temp_var_18
   ldx temp_var_34
   lda temp_var_19
@@ -8085,9 +8098,9 @@ _label_b5fc:
 _func_b600:
   asl a
   tax
-  lda a:_data_f2c8_indexed,X
+  lda a:_data_f2c8,X
   sta temp_var_19
-  lda a:_data_f2c9_indexed,X
+  lda a:_data_f2c8+1,X
   sta temp_var_1a
   ldx #$00
 _label_b60e:
@@ -8118,9 +8131,9 @@ _label_b624:
   asl a
   asl a
   tax
-  lda a:_data_f26b_indexed,Y
+  lda a:_data_f26b,Y
   sta a:temp_var_302,X
-  lda a:_data_f26c_indexed,Y
+  lda a:_data_f26b+1,Y
   sta a:temp_var_303,X
   ldx temp_var_24
   inx
@@ -8241,10 +8254,10 @@ _label_b6ec:
   bmi _label_b720
   asl a
   tay
-  lda a:_data_f26b_indexed,Y
+  lda a:_data_f26b,Y
   sta a:sprite_flag,X
   inx
-  lda a:_data_f26c_indexed,Y
+  lda a:_data_f26b+1,Y
   sta a:sprite_flag,X
   lda #$00
   beq _label_b72b
@@ -8794,629 +8807,53 @@ _label_bab0:
   inc temp_var_5b
   rts
 
-_data_bac0_indexed:
-.byte $29
+_data_bac0:
+.incbin "data/data_bac0.bin"
 
-_data_bac1_indexed:
-.byte $bd, $7e, $bd, $cb, $bd, $9c, $bb, $f9, $bb, $d4, $bc, $d8, $ba, $e9, $ba, $00
-.byte $bb, $25, $bb, $3a, $bb, $89, $bb, $18, $df, $ba, $18, $e4, $ba, $00, $25, $26
-.byte $01, $ee, $00, $25, $26, $01, $0e, $00, $18, $f0, $ba, $18, $f8, $ba, $00, $25
-.byte $14, $04, $d5, $d6, $d7, $d8, $00, $25, $14, $04, $1e, $39, $3e, $5c, $00, $18
-.byte $07, $bb, $18, $16, $bb, $00, $26, $17, $01, $b8, $26, $36, $02, $b7, $b9, $26
-.byte $57, $02, $ba, $bb, $00, $26, $17, $01, $7c, $26, $36, $02, $72, $7d, $26, $57
-.byte $02, $7e, $89, $00, $18, $2c, $bb, $18, $33, $bb, $00, $25, $15, $03, $f2, $f3
-.byte $f4, $00, $25, $15, $03, $14, $15, $16, $00, $18, $41, $bb, $18, $65, $bb, $00
-.byte $24, $d5, $01, $cf, $25, $71, $02, $dc, $d7, $25, $91, $02, $d6, $d8, $25, $b1
-.byte $02, $d5, $d9, $25, $d1, $02, $d4, $da, $25, $f0, $03, $ff, $d3, $db, $26, $10
-.byte $02, $d0, $d1, $00, $24, $d5, $01, $10, $25, $71, $02, $ff, $2c, $25, $91, $02
-.byte $33, $34, $25, $b1, $02, $3b, $3c, $25, $d1, $02, $43, $44, $25, $f0, $03, $4a
-.byte $4b, $4c, $26, $10, $02, $52, $53, $00, $18, $90, $bb, $18, $96, $bb, $00, $25
-.byte $e8, $02, $f9, $fa, $00, $25, $e8, $02, $81, $91, $00, $18, $a3, $bb, $18, $ce
-.byte $bb, $00, $24, $a8, $04, $fd, $e7, $f0, $f3, $24, $c8, $04, $fe, $f4, $f5, $f6
-.byte $24, $ed, $02, $e5, $e6, $25, $0d, $03, $e8, $e9, $0e, $25, $2d, $03, $eb, $ec
-.byte $1a, $25, $4d, $03, $ee, $ef, $ff, $25, $6d, $02, $f1, $f2, $00, $24, $a8, $04
-.byte $6c, $8c, $93, $a9, $24, $c8, $04, $6d, $8b, $94, $a8, $24, $ed, $02, $ff, $ff
-.byte $25, $0d, $03, $ff, $ff, $be, $25, $2d, $03, $b7, $b8, $bd, $25, $4d, $03, $b6
-.byte $b9, $bc, $25, $6d, $02, $b5, $ba, $00, $18, $00, $bc, $18, $6a, $bc, $00, $24
-.byte $ea, $03, $4b, $6e, $75, $25, $0a, $03, $4c, $6d, $76, $25, $2a, $03, $4d, $6c
-.byte $77, $25, $6c, $03, $d9, $da, $db, $25, $8c, $03, $dd, $de, $df, $25, $ac, $03
-.byte $2c, $e2, $e3, $25, $cc, $03, $e5, $e6, $e7, $25, $ec, $03, $e9, $ea, $eb, $26
-.byte $0c, $03, $ed, $ee, $ef, $26, $2c, $03, $f1, $f2, $f3, $26, $4c, $03, $d2, $ff
-.byte $ff, $26, $6c, $03, $d3, $ff, $ff, $26, $8c, $03, $d4, $fb, $f4, $26, $ac, $02
-.byte $fd, $fc, $26, $cc, $02, $f5, $01, $26, $ec, $02, $f7, $f8, $27, $0c, $03, $f9
-.byte $fa, $06, $27, $2c, $03, $14, $1b, $ff, $00, $24, $ea, $03, $cd, $ce, $cf, $25
-.byte $0a, $03, $d0, $d1, $d5, $25, $2a, $03, $d6, $d7, $d8, $25, $6c, $03, $79, $96
-.byte $01, $25, $8c, $03, $01, $01, $01, $25, $ac, $03, $01, $01, $a1, $25, $cc, $03
-.byte $7c, $01, $a2, $25, $ec, $03, $7d, $92, $a3, $26, $0c, $03, $7e, $91, $a4, $26
-.byte $2c, $03, $7f, $90, $67, $26, $4c, $03, $80, $8f, $a6, $26, $6c, $03, $81, $8e
-.byte $a7, $26, $8c, $03, $82, $01, $a8, $26, $ac, $02, $83, $8c, $26, $cc, $02, $84
-.byte $8b, $26, $ec, $02, $85, $8a, $27, $0c, $03, $50, $5c, $ac, $27, $2c, $03, $8d
-.byte $a5, $ad, $00, $18, $db, $bc, $18, $02, $bd, $00, $25, $45, $03, $e4, $e5, $e6
-.byte $25, $65, $03, $e7, $e8, $e9, $26, $d4, $03, $f9, $fc, $ee, $26, $f4, $04, $f0
-.byte $fb, $f7, $f1, $27, $14, $04, $fe, $ed, $f6, $ef, $27, $35, $03, $ff, $ff, $ff
-.byte $00, $25, $45, $03, $18, $1f, $39, $25, $65, $03, $17, $20, $38, $26, $d4, $03
-.byte $be, $ca, $ff, $26, $f4, $04, $bd, $cb, $ce, $ff, $27, $14, $04, $bc, $24, $cd
-.byte $cf, $27, $35, $03, $dd, $dc, $de, $00, $18, $30, $bd, $18, $57, $bd, $00, $25
-.byte $45, $03, $e4, $e5, $e6, $25, $65, $03, $e7, $e8, $e9, $26, $d4, $03, $f9, $fc
-.byte $ee, $26, $f4, $04, $f0, $fb, $f7, $f1, $27, $14, $04, $fe, $ed, $f6, $ef, $27
-.byte $35, $03, $ff, $ff, $ff, $00, $25, $45, $03, $18, $1f, $39, $25, $65, $03, $17
-.byte $20, $38, $26, $d4, $03, $be, $ca, $ff, $26, $f4, $04, $bd, $cb, $ce, $ff, $27
-.byte $14, $04, $bc, $24, $cd, $cf, $27, $35, $03, $dd, $dc, $de, $00, $18, $85, $bd
-.byte $18, $a8, $bd, $00, $24, $f0, $01, $db, $25, $31, $03, $e9, $08, $12, $26, $b8
-.byte $03, $17, $2a, $3c, $26, $d8, $04, $4b, $52, $5b, $ff, $26, $f8, $03, $89, $77
-.byte $81, $27, $19, $02, $a4, $c3, $00, $24, $f0, $01, $ff, $25, $31, $03, $69, $7c
-.byte $85, $26, $b8, $03, $b8, $c2, $c7, $26, $d8, $04, $b7, $22, $c6, $cd, $26, $f8
-.byte $03, $ff, $c4, $c5, $27, $19, $02, $ff, $ff, $00, $18, $d2, $bd, $18, $02, $be
-.byte $00, $24, $f3, $03, $9e, $41, $6e, $25, $13, $03, $9f, $42, $6d, $25, $33, $03
-.byte $a0, $43, $6b, $25, $50, $03, $ff, $ff, $b7, $25, $6d, $06, $57, $56, $55, $53
-.byte $ff, $b6, $25, $8d, $06, $5d, $5c, $5b, $54, $9b, $b8, $25, $af, $02, $da, $a8
-.byte $00, $24, $f3, $03, $d3, $d4, $d5, $25, $13, $03, $d7, $d8, $d9, $25, $33, $03
-.byte $db, $dc, $dd, $25, $50, $03, $15, $16, $3d, $25, $6d, $06, $ff, $ff, $ff, $14
-.byte $17, $3c, $25, $8d, $06, $ff, $ff, $ff, $13, $18, $3b, $25, $af, $02, $ff, $12
-.byte $00
+_data_be32:
+.incbin "data/data_be32.bin"
 
-_data_be32_indexed:
-.byte $cb
+_data_be52:
+.incbin "data/data_be52.bin"
 
-_data_be33_indexed:
-.byte $bf, $f0, $c0, $f0, $c0, $15, $c3, $dd, $c3, $fa, $c5, $03, $c8, $57, $ca, $80
-.byte $cc, $c0, $ce, $b5, $d0, $85, $d2, $6b, $d4, $b0, $d6, $1b, $d9, $4b, $db
+_data_bf93:
+.incbin "data/data_bf93.bin"
 
-_data_be52_indexed:
-.byte $72
+_data_dd75:
+.incbin "data/data_dd75.bin"
 
-_data_be53_indexed:
-.byte $be, $92, $be, $b2, $be, $b2, $be, $62, $bf, $72, $bf, $82, $bf, $32, $bf, $42
-.byte $bf, $52, $bf, $d2, $be, $e2, $be, $f2, $be, $02, $bf, $12, $bf, $22, $bf, $0e
-.byte $01, $0c, $0e, $0e, $02, $08, $0e, $0e, $02, $08, $0e, $0e, $02, $0c, $0e, $0e
-.byte $3a, $2a, $1a, $0e, $32, $27, $07, $0e, $30, $28, $08, $0e, $32, $2c, $12, $0e
-.byte $31, $2a, $28, $0e, $30, $25, $22, $0e, $2b, $28, $30, $0e, $31, $22, $13, $0e
-.byte $31, $2a, $28, $0e, $2a, $25, $22, $0e, $21, $28, $30, $0e, $27, $27, $17, $0e
-.byte $31, $2a, $28, $0e, $2a, $25, $22, $0e, $21, $28, $30, $0e, $30, $27, $17, $0e
-.byte $31, $2a, $28, $0e, $2a, $25, $22, $0e, $21, $28, $30, $0e, $30, $27, $17, $0e
-.byte $30, $25, $28, $0e, $37, $26, $11, $0e, $37, $26, $05, $0e, $37, $26, $16, $0e
-.byte $30, $25, $14, $0e, $37, $26, $11, $0e, $37, $26, $05, $0e, $37, $26, $16, $0e
-.byte $ff, $ff, $ff, $0e, $30, $22, $2a, $0e, $37, $26, $05, $0e, $37, $26, $16, $0e
-.byte $30, $14, $2a, $0e, $37, $26, $03, $0e, $37, $07, $13, $0e, $37, $26, $13, $2e
-.byte $30, $2a, $28, $2e, $37, $26, $03, $2e, $37, $26, $14, $2e, $37, $26, $16, $2e
-.byte $ff, $ff, $ff, $2e, $30, $28, $2a, $2e, $37, $26, $03, $2e, $37, $26, $16, $2e
-.byte $36, $26, $06, $2e, $36, $26, $13, $2e, $30, $25, $2a, $2e, $26, $13, $14, $2e
-.byte $30, $2a, $28, $2e, $36, $26, $07, $2e, $36, $26, $15, $2e, $15, $26, $07, $0e
-.byte $00, $00, $00, $0e, $30, $24, $2a, $0e, $26, $16, $06, $0e, $36, $26, $16, $0e
-.byte $36, $26, $12, $0e, $30, $24, $2a, $0e, $26, $16, $06, $0e, $36, $26, $16, $0e
-.byte $36, $26, $13, $0e, $30, $25, $1a, $0e, $36, $26, $06, $0e, $36, $26, $16, $2e
-.byte $36, $26, $16, $2e, $00, $00, $00, $2e, $00, $00, $00, $2e, $30, $2a, $28, $0e
-
-_data_bf93_indexed:
-.byte $72
-
-_data_bf94_indexed:
-.byte $be, $9b, $bf, $ab, $bf, $bb, $bf, $0e, $11, $01, $0c, $0e, $12, $07, $0e, $0e
-.byte $12, $05, $0e, $0e, $12, $01, $0c, $0e, $11, $01, $01, $0e, $22, $17, $07, $0e
-.byte $22, $15, $05, $0e, $22, $11, $01, $0e, $21, $11, $01, $0e, $32, $27, $17, $0e
-.byte $32, $25, $15, $0e, $32, $21, $11, $20, $00, $77, $ff, $15, $ff, $87, $d2, $d1
-.byte $d0, $cf, $ce, $cd, $cc, $18, $ff, $89, $d3, $0a, $0b, $3a, $0d, $0f, $0e, $10
-.byte $cb, $16, $ff, $8b, $d4, $08, $49, $2c, $2d, $2e, $30, $2f, $11, $12, $ca, $14
-.byte $ff, $8d, $d5, $07, $31, $32, $33, $54, $22, $34, $37, $38, $39, $13, $c9, $13
-.byte $ff, $8d, $05, $06, $40, $3f, $55, $56, $ff, $e9, $b2, $af, $ae, $b1, $14, $12
-.byte $ff, $84, $d6, $51, $35, $42, $07, $ff, $84, $4a, $36, $eb, $c8, $11, $ff, $84
-.byte $be, $ff, $52, $53, $07, $ff, $84, $e5, $e6, $ff, $bd, $11, $ff, $8f, $b3, $02
-.byte $57, $58, $59, $5a, $5b, $5c, $5d, $5e, $5f, $60, $61, $62, $17, $11, $ff, $8f
-.byte $b4, $01, $6e, $6d, $6c, $6b, $6a, $69, $68, $67, $66, $65, $64, $63, $18, $11
-.byte $ff, $8f, $b5, $00, $6f, $70, $71, $72, $73, $74, $75, $76, $77, $78, $79, $7a
-.byte $19, $11, $ff, $8f, $b6, $2a, $85, $86, $87, $88, $89, $8a, $8b, $8c, $8d, $8e
-.byte $8f, $1b, $c7, $11, $ff, $8f, $ba, $29, $9a, $99, $98, $97, $96, $95, $94, $93
-.byte $92, $91, $90, $1c, $bf, $11, $ff, $8f, $c6, $2b, $84, $83, $82, $81, $80, $7f
-.byte $7e, $7d, $7c, $7b, $b0, $1a, $c3, $12, $ff, $8d, $b9, $28, $9b, $9c, $9d, $9e
-.byte $9f, $a0, $a1, $a2, $a3, $1d, $c2, $14, $ff, $8b, $b7, $27, $aa, $a9, $a8, $a7
-.byte $a6, $a5, $a4, $1e, $c1, $16, $ff, $89, $b8, $26, $25, $ab, $ac, $ad, $20, $1f
-.byte $c0, $18, $ff, $87, $c5, $bb, $24, $23, $21, $bc, $c4, $77, $ff, $77, $ff, $41
-.byte $ff, $81, $bf, $07, $ff, $04, $55, $04, $ff, $81, $65, $02, $a5, $81, $95, $04
-.byte $ff, $04, $0a, $04, $ff, $04, $f0, $1a, $ff, $ff, $ff, $ff, $24, $00, $8a, $1f
-.byte $20, $1f, $20, $1f, $20, $1f, $20, $1f, $20, $02, $1f, $89, $20, $1f, $20, $1f
-.byte $20, $1f, $20, $1f, $20, $02, $1f, $b4, $20, $1f, $20, $1f, $20, $1f, $20, $1f
-.byte $20, $21, $22, $21, $22, $21, $22, $21, $22, $21, $24, $25, $21, $22, $21, $22
-.byte $21, $22, $21, $22, $21, $2e, $2f, $21, $22, $21, $22, $21, $22, $21, $22, $21
-.byte $22, $1f, $20, $1f, $20, $1f, $20, $1f, $20, $1f, $26, $27, $09, $0e, $b7, $3a
-.byte $3b, $1f, $20, $1f, $20, $1f, $20, $1f, $20, $1f, $20, $21, $22, $21, $22, $21
-.byte $22, $21, $22, $21, $28, $29, $ff, $54, $4f, $50, $ff, $54, $45, $4e, $ff, $3c
-.byte $3d, $21, $22, $21, $22, $21, $22, $21, $22, $21, $22, $1f, $20, $1f, $20, $1f
-.byte $20, $1f, $20, $1f, $2a, $2b, $09, $23, $97, $5b, $5c, $1f, $20, $1f, $20, $1f
-.byte $20, $1f, $20, $1f, $20, $21, $22, $21, $22, $21, $22, $21, $22, $21, $2c, $2d
-.byte $09, $ff, $90, $5d, $5e, $21, $22, $21, $22, $21, $22, $21, $22, $21, $22, $1f
-.byte $20, $64, $65, $05, $63, $81, $6a, $0b, $ff, $81, $69, $06, $63, $87, $67, $68
-.byte $1f, $20, $21, $22, $66, $03, $ff, $84, $4e, $41, $4d, $45, $02, $ff, $82, $42
-.byte $55, $02, $42, $82, $4c, $45, $04, $ff, $85, $53, $43, $4f, $52, $45, $02, $ff
-.byte $86, $62, $21, $22, $1f, $20, $5f, $1a, $ff, $8d, $61, $1f, $20, $21, $22, $60
-.byte $ff, $31, $6b, $ff, $59, $45, $48, $13, $ff, $86, $62, $21, $22, $1f, $20, $5f
-.byte $1a, $ff, $8d, $61, $1f, $20, $21, $22, $60, $ff, $32, $6b, $ff, $43, $48, $45
-.byte $13, $ff, $86, $62, $21, $22, $1f, $20, $5f, $1a, $ff, $8d, $61, $1f, $20, $21
-.byte $22, $60, $ff, $33, $6b, $ff, $54, $52, $49, $13, $ff, $86, $62, $21, $22, $1f
-.byte $20, $5f, $1a, $ff, $8d, $61, $1f, $20, $21, $22, $60, $ff, $34, $6b, $ff, $48
-.byte $6b, $59, $13, $ff, $86, $62, $21, $22, $1f, $20, $5f, $1a, $ff, $8d, $61, $1f
-.byte $20, $21, $22, $60, $ff, $35, $6b, $ff, $59, $41, $4e, $13, $ff, $86, $62, $21
-.byte $22, $1f, $20, $5f, $1a, $ff, $8d, $61, $1f, $20, $21, $22, $60, $ff, $36, $6b
-.byte $ff, $4a, $41, $43, $13, $ff, $86, $62, $21, $22, $1f, $20, $5f, $1a, $ff, $8d
-.byte $61, $1f, $20, $21, $22, $60, $ff, $37, $6b, $ff, $44, $6b, $48, $13, $ff, $86
-.byte $62, $21, $22, $1f, $20, $5f, $1a, $ff, $8d, $61, $1f, $20, $21, $22, $60, $ff
-.byte $38, $6b, $ff, $54, $49, $4e, $13, $ff, $86, $62, $21, $22, $1f, $20, $5f, $1a
-.byte $ff, $8d, $61, $1f, $20, $21, $22, $60, $ff, $39, $6b, $ff, $42, $41, $42, $13
-.byte $ff, $86, $62, $21, $22, $1f, $20, $5f, $1a, $ff, $8d, $61, $1f, $20, $21, $22
-.byte $60, $ff, $31, $30, $6b, $4b, $41, $54, $13, $ff, $87, $62, $21, $22, $1f, $20
-.byte $6e, $6c, $19, $6d, $a3, $6f, $1f, $20, $21, $22, $60, $21, $22, $21, $22, $21
-.byte $22, $21, $22, $21, $22, $21, $22, $21, $22, $21, $22, $21, $22, $21, $22, $21
-.byte $22, $21, $22, $21, $22, $62, $21, $22, $11, $ff, $06, $5a, $02, $ff, $06, $5a
-.byte $02, $ff, $06, $5a, $02, $ff, $06, $5a, $02, $ff, $06, $5a, $09, $ff, $ff, $ff
-.byte $ff, $24, $00, $77, $ff, $0f, $ff, $83, $50, $4c, $41, $02, $4e, $85, $45, $44
-.byte $ff, $42, $59, $16, $ff, $86, $54, $52, $49, $43, $49, $41, $3a, $ff, $86, $50
-.byte $52, $4f, $47, $52, $41, $02, $4d, $85, $45, $44, $ff, $42, $59, $13, $ff, $87
-.byte $53, $49, $4c, $56, $45, $52, $53, $39, $ff, $8a, $47, $52, $41, $50, $48, $49
-.byte $43, $ff, $42, $59, $16, $ff, $85, $4b, $41, $54, $48, $59, $3b, $ff, $8f, $41
-.byte $52, $54, $ff, $44, $49, $52, $45, $43, $54, $4f, $52, $ff, $42, $59, $11, $ff
-.byte $84, $50, $4f, $4e, $59, $3c, $ff, $88, $4d, $55, $53, $49, $43, $ff, $42, $59
-.byte $18, $ff, $82, $4b, $4f, $02, $53, $82, $45, $4c, $3a, $ff, $89, $54, $48, $41
-.byte $4e, $4b, $53, $ff, $54, $4f, $17, $ff, $84, $4a, $41, $43, $4b, $3c, $ff, $85
-.byte $42, $47, $4d, $40, $8e, $1b, $ff, $92, $57, $41, $56, $49, $4e, $47, $ff, $55
-.byte $50, $ff, $41, $4e, $44, $ff, $44, $4f, $57, $4e, $2e, $ff, $85, $42, $47, $4d
-.byte $40, $8f, $1b, $ff, $87, $42, $4c, $4f, $57, $ff, $42, $55, $02, $42, $83, $4c
-.byte $45, $53, $77, $ff, $37, $ff, $ff, $ff, $ff, $24, $00, $4a, $ff, $82, $01, $32
-.byte $02, $01, $87, $33, $34, $35, $3c, $ff, $01, $32, $02, $35, $81, $3d, $32, $ff
-.byte $93, $46, $47, $35, $4c, $4f, $ff, $3d, $50, $32, $ff, $4c, $50, $ff, $51, $50
-.byte $51, $ff, $56, $3d, $2d, $ff, $82, $01, $32, $02, $01, $8d, $33, $5d, $ff, $35
-.byte $50, $46, $5e, $ff, $34, $ff, $01, $5d, $4c, $0a, $ff, $82, $1b, $1c, $1d, $ff
-.byte $84, $02, $1a, $1d, $3b, $02, $ff, $91, $34, $ff, $61, $47, $35, $ff, $56, $47
-.byte $62, $5d, $ff, $3d, $50, $32, $64, $63, $4f, $09, $ff, $85, $03, $19, $1e, $3a
-.byte $3e, $1b, $ff, $8c, $04, $e4, $e5, $e6, $3f, $ff, $01, $32, $64, $4f, $4c, $5e
-.byte $14, $ff, $85, $05, $e7, $e8, $e9, $40, $1b, $ff, $86, $06, $16, $21, $37, $41
-.byte $d7, $02, $ff, $84, $6b, $6d, $84, $86, $14, $ff, $8c, $07, $15, $22, $36, $42
-.byte $00, $55, $ff, $6a, $24, $83, $87, $14, $ff, $89, $08, $14, $23, $f5, $43, $d5
-.byte $54, $57, $69, $02, $24, $85, $88, $9a, $9b, $af, $b1, $0d, $ff, $81, $f3, $02
-.byte $ff, $8d, $09, $13, $24, $9c, $44, $d4, $53, $58, $68, $70, $24, $89, $99, $02
-.byte $24, $81, $b2, $08, $ff, $81, $f3, $07, $ff, $8a, $0a, $12, $25, $9d, $45, $d3
-.byte $52, $59, $b4, $71, $02, $24, $81, $98, $02, $24, $82, $b3, $c4, $0d, $ff, $8c
-.byte $f3, $ff, $0b, $11, $26, $9e, $a3, $a9, $da, $5a, $b5, $72, $02, $24, $85, $97
-.byte $24, $ac, $24, $c3, $08, $ff, $81, $f3, $06, $ff, $91, $0c, $10, $27, $31, $a8
-.byte $ad, $db, $5b, $b6, $73, $7e, $24, $96, $9f, $ab, $24, $c2, $0f, $ff, $92, $0d
-.byte $0f, $28, $30, $48, $d0, $df, $5c, $b9, $cc, $7d, $8d, $95, $a0, $aa, $24, $c1
-.byte $c7, $06, $ff, $81, $f3, $04, $ff, $81, $f3, $03, $ff, $91, $0e, $29, $2f, $49
-.byte $d9, $4e, $ae, $c0, $d1, $7c, $8e, $94, $a1, $ff, $b7, $24, $c8, $05, $ff, $83
-.byte $f3, $f4, $f3, $03, $ff, $81, $f3, $04, $ff, $90, $2a, $24, $4a, $ff, $4d, $b0
-.byte $c5, $d2, $d8, $8f, $93, $a2, $ff, $b8, $bf, $c9, $05, $ff, $82, $f3, $f8, $04
-.byte $ff, $82, $f4, $f3, $03, $ff, $83, $2b, $2d, $4b, $02, $ff, $8c, $5f, $c6, $d6
-.byte $7a, $90, $92, $24, $a7, $ff, $f9, $fc, $ee, $03, $ff, $83, $f3, $f4, $f3, $04
-.byte $ff, $81, $f8, $05, $ff, $81, $2c, $03, $ff, $8d, $2e, $60, $78, $79, $ff, $91
-.byte $a4, $a6, $ba, $f0, $fb, $f7, $f1, $03, $ff, $81, $f8, $07, $ff, $83, $f3, $ff
-.byte $f3, $0c, $ff, $86, $a5, $bb, $fe, $ed, $f6, $ef, $0a, $ff, $83, $f3, $f4, $f3
-.byte $1e, $ff, $82, $f8, $ff, $02, $f3, $14, $ff, $81, $f3, $05, $ff, $81, $f3, $05
-.byte $ff, $02, $f3, $03, $ff, $81, $f3, $0b, $ff, $81, $f3, $0d, $ff, $02, $f3, $81
-.byte $f8, $1e, $ff, $81, $f8, $1a, $ff, $81, $7f, $04, $5f, $84, $df, $ff, $af, $77
-.byte $04, $55, $85, $dd, $ff, $fa, $66, $55, $03, $f5, $84, $ff, $df, $3f, $0e, $04
-.byte $ff, $92, $df, $f7, $33, $00, $0c, $cf, $ff, $7f, $dd, $55, $df, $33, $00, $fc
-.byte $ff, $75, $dd, $57, $02, $5d, $81, $df, $02, $ff, $81, $5f, $02, $ff, $82, $f7
-.byte $fd, $05, $ff, $ff, $ff, $ff, $24, $00, $10, $ff, $81, $fe, $50, $ff, $8d, $00
-.byte $0b, $19, $ff, $1a, $1f, $ff, $20, $1f, $ff, $23, $1f, $1a, $33, $ff, $85, $26
-.byte $23, $1f, $1a, $2c, $2b, $ff, $84, $66, $7f, $82, $9e, $0c, $ff, $95, $30, $0b
-.byte $38, $39, $ff, $1a, $1f, $ff, $3b, $0b, $1a, $23, $39, $38, $ff, $db, $67, $7e
-.byte $83, $9d, $fa, $1a, $ff, $86, $09, $68, $7d, $84, $9c, $9f, $0b, $ff, $86, $3f
-.byte $39, $ff, $42, $47, $58, $09, $ff, $86, $0a, $e9, $08, $12, $9b, $a0, $1a, $ff
-.byte $86, $59, $6a, $7b, $86, $9a, $a1, $1a, $ff, $88, $64, $6b, $7a, $87, $99, $a2
-.byte $ae, $af, $05, $ff, $82, $d1, $d7, $10, $ff, $8b, $40, $63, $5a, $79, $88, $98
-.byte $a3, $ad, $b0, $bc, $bd, $03, $ff, $82, $d2, $d6, $0f, $ff, $91, $3e, $41, $6c
-.byte $60, $61, $62, $97, $2e, $ac, $b1, $bb, $be, $c9, $cb, $d0, $d3, $d5, $0e, $ff
-.byte $88, $1e, $3d, $11, $6d, $6e, $65, $51, $fc, $04, $ff, $85, $bf, $c8, $cc, $cf
-.byte $d4, $0e, $ff, $89, $10, $b2, $78, $43, $11, $6f, $76, $8b, $96, $16, $ff, $82
-.byte $06, $ca, $02, $11, $86, $44, $5f, $70, $75, $8c, $94, $15, $ff, $84, $01, $07
-.byte $ce, $21, $02, $22, $85, $5e, $71, $74, $8d, $93, $15, $ff, $8c, $02, $11, $13
-.byte $d8, $22, $46, $5d, $72, $73, $8e, $92, $a5, $11, $ff, $81, $4c, $02, $ff, $87
-.byte $03, $11, $14, $80, $8a, $91, $5c, $02, $ff, $84, $8f, $11, $a6, $ab, $10, $ff
-.byte $81, $2d, $02, $ff, $87, $03, $11, $15, $24, $37, $48, $95, $03, $ff, $84, $90
-.byte $a7, $aa, $b4, $0f, $ff, $81, $3a, $02, $ff, $87, $05, $11, $16, $25, $36, $49
-.byte $22, $04, $ff, $86, $a8, $a9, $b5, $17, $2a, $3c, $07, $ff, $81, $4c, $04, $ff
-.byte $82, $3a, $4c, $02, $ff, $86, $0c, $da, $22, $35, $4a, $22, $06, $ff, $84, $b6
-.byte $4b, $52, $5b, $07, $ff, $83, $2d, $ff, $4c, $02, $ff, $82, $3a, $2d, $02, $ff
-.byte $84, $0d, $11, $22, $34, $02, $22, $07, $ff, $83, $89, $77, $81, $07, $ff, $85
-.byte $3a, $ff, $2d, $ff, $4c, $02, $3a, $02, $ff, $86, $0e, $11, $28, $33, $22, $57
-.byte $08, $ff, $82, $a4, $c3, $07, $ff, $8f, $3a, $45, $3a, $ff, $2d, $4c, $3a, $45
-.byte $ff, $0f, $11, $29, $32, $4d, $56, $10, $ff, $89, $04, $3a, $2f, $3a, $45, $3a
-.byte $2d, $3a, $2f, $02, $ff, $85, $1b, $d9, $31, $4e, $55, $11, $ff, $84, $3a, $4c
-.byte $ff, $2f, $03, $3a, $02, $4c, $86, $ff, $1c, $11, $22, $4f, $54, $10, $ff, $83
-.byte $4c, $ff, $2d, $02, $ff, $02, $3a, $81, $ff, $02, $2d, $86, $ff, $1d, $11, $22
-.byte $50, $53, $10, $ff, $83, $2d, $ff, $3a, $02, $ff, $02, $3a, $83, $2f, $ff, $3a
-.byte $15, $ff, $03, $5f, $81, $df, $04, $ff, $82, $55, $5d, $02, $5f, $82, $af, $ef
-.byte $02, $ff, $02, $f5, $84, $ff, $bf, $ea, $ae, $05, $ff, $84, $00, $0c, $88, $ef
-.byte $02, $ff, $8f, $7f, $ff, $00, $c0, $f8, $ee, $ff, $5f, $55, $dd, $f0, $fc, $ff
-.byte $fe, $ff, $02, $55, $81, $5d, $05, $ff, $03, $55, $05, $ff, $ff, $ff, $ff, $24
-.byte $00, $61, $ff, $93, $00, $02, $03, $04, $05, $06, $ff, $07, $08, $06, $ff, $09
-.byte $03, $0a, $0b, $0c, $06, $0d, $07, $20, $ff, $83, $3e, $71, $72, $05, $ff, $83
-.byte $de, $df, $e0, $02, $ff, $97, $29, $34, $35, $ff, $0c, $35, $ff, $07, $08, $06
-.byte $ff, $36, $02, $05, $09, $46, $47, $ff, $9c, $3f, $70, $73, $96, $03, $ff, $84
-.byte $e4, $e3, $e2, $e1, $13, $ff, $86, $99, $9d, $40, $6f, $74, $95, $03, $ff, $84
-.byte $e5, $e6, $e7, $e8, $02, $ff, $8e, $35, $02, $36, $ff, $00, $02, $03, $ff, $52
-.byte $06, $07, $ff, $07, $02, $03, $ff, $86, $9a, $9e, $41, $6e, $75, $94, $03, $ff
-.byte $83, $eb, $ea, $e9, $14, $ff, $86, $b5, $9f, $42, $6d, $76, $93, $09, $ff, $8a
-.byte $0d, $02, $34, $0b, $ff, $0c, $35, $ff, $29, $00, $08, $ff, $85, $a0, $43, $6b
-.byte $77, $97, $03, $ff, $81, $ec, $02, $ff, $81, $ec, $13, $ff, $86, $b7, $a1, $44
-.byte $6c, $78, $92, $04, $ff, $81, $ec, $04, $ff, $84, $0d, $03, $46, $0d, $04, $47
-.byte $04, $ff, $8b, $57, $56, $55, $53, $ff, $b6, $a2, $45, $6a, $79, $91, $03, $ff
-.byte $81, $ec, $11, $ff, $8c, $5d, $5c, $5b, $54, $9b, $b8, $a3, $01, $69, $7a, $90
-.byte $98, $16, $ff, $89, $da, $a8, $19, $3a, $a4, $01, $68, $01, $8f, $04, $ff, $81
-.byte $ec, $13, $ff, $88, $11, $1a, $39, $a5, $48, $67, $7c, $8e, $06, $ff, $81, $ec
-.byte $0d, $ff, $81, $ec, $03, $ff, $88, $10, $1b, $38, $a6, $49, $66, $7d, $8d, $08
-.byte $ff, $81, $ec, $0f, $ff, $88, $0f, $1c, $37, $a7, $4a, $65, $7e, $8c, $13, $ff
-.byte $83, $ec, $ff, $ec, $02, $ff, $82, $0e, $1d, $02, $01, $83, $4b, $64, $7f, $05
-.byte $ff, $83, $de, $df, $e0, $0d, $ff, $81, $ec, $04, $ff, $81, $1e, $02, $01, $83
-.byte $4c, $63, $80, $04, $ff, $84, $e4, $e3, $e2, $e1, $02, $ff, $81, $ec, $0f, $ff
-.byte $86, $1f, $01, $aa, $4d, $62, $81, $04, $ff, $84, $e5, $e6, $e7, $e8, $04, $ff
-.byte $83, $de, $df, $e0, $0b, $ff, $86, $20, $33, $ab, $4e, $61, $82, $02, $ff, $85
-.byte $ec, $ff, $eb, $ea, $e9, $04, $ff, $84, $e4, $e3, $e2, $e1, $04, $ff, $81, $ec
-.byte $06, $ff, $86, $21, $32, $ac, $4f, $60, $83, $0b, $ff, $84, $e5, $e6, $e7, $e8
-.byte $0b, $ff, $86, $22, $31, $ad, $50, $5f, $84, $02, $ff, $84, $de, $df, $e0, $ec
-.byte $05, $ff, $83, $eb, $ea, $e9, $0c, $ff, $8b, $23, $30, $ae, $51, $01, $85, $ff
-.byte $e4, $e3, $e2, $e1, $0a, $ff, $85, $ec, $ff, $de, $df, $e0, $06, $ff, $83, $24
-.byte $2f, $af, $02, $01, $86, $86, $ff, $e5, $e6, $e7, $e8, $02, $ff, $81, $ec, $08
-.byte $ff, $84, $e4, $e3, $e2, $e1, $02, $ff, $81, $ec, $03, $ff, $83, $25, $2e, $b0
-.byte $02, $01, $85, $87, $ff, $eb, $ea, $e9, $09, $ff, $81, $ec, $02, $ff, $84, $e5
-.byte $e6, $e7, $e8, $03, $ff, $81, $ec, $02, $ff, $83, $26, $2d, $b1, $02, $01, $81
-.byte $88, $04, $ff, $81, $ec, $0b, $ff, $83, $eb, $ea, $e9, $07, $ff, $86, $27, $2c
-.byte $b2, $01, $5a, $89, $15, $ff, $81, $ec, $04, $ff, $86, $28, $2b, $b3, $01, $59
-.byte $8a, $02, $ff, $81, $ec, $04, $ff, $81, $ec, $13, $ff, $84, $2a, $b4, $01, $58
-.byte $06, $ff, $81, $ec, $0f, $ff, $83, $03, $00, $cc, $04, $ff, $81, $0f, $02, $00
-.byte $83, $cc, $fc, $33, $02, $00, $81, $f0, $02, $00, $82, $cc, $cf, $04, $ff, $02
-.byte $00, $06, $ff, $02, $00, $06, $ff, $02, $00, $06, $ff, $82, $00, $c0, $02, $ff
-.byte $ff, $ff, $ff, $24, $00, $49, $ff, $81, $8f, $1d, $ff, $85, $68, $6a, $8e, $91
-.byte $ab, $04, $ff, $8e, $02, $7d, $bb, $ff, $c3, $c4, $c5, $c3, $c6, $ff, $c3, $c4
-.byte $c7, $c6, $09, $ff, $85, $67, $6b, $8d, $92, $aa, $1b, $ff, $85, $66, $fd, $e7
-.byte $f0, $f3, $04, $ff, $8b, $c8, $ca, $c5, $ff, $c6, $cb, $c4, $ff, $cc, $c8, $ca
-.byte $0c, $ff, $85, $65, $fe, $f4, $f5, $f6, $1b, $ff, $93, $64, $6e, $8a, $95, $a7
-.byte $ff, $e5, $e6, $ff, $cd, $ce, $cb, $cf, $ff, $bb, $c6, $ff, $cd, $c4, $02, $cd
-.byte $83, $ce, $d0, $c3, $06, $ff, $8b, $3a, $3c, $63, $6f, $89, $96, $a6, $ff, $e8
-.byte $e9, $0e, $11, $ff, $81, $43, $02, $ff, $96, $05, $39, $3d, $62, $70, $88, $97
-.byte $a5, $ff, $eb, $ec, $1a, $c8, $ca, $c5, $ff, $d1, $d0, $d2, $ff, $bb, $d0, $0a
-.byte $ff, $8b, $06, $38, $2b, $61, $71, $87, $98, $a4, $ff, $ee, $ef, $15, $ff, $94
-.byte $07, $37, $3f, $60, $72, $86, $99, $a3, $ac, $f1, $f2, $ff, $d3, $d0, $c5, $ff
-.byte $d4, $cb, $d2, $d5, $09, $ff, $8d, $69, $58, $82, $08, $36, $40, $2d, $2e, $5a
-.byte $9a, $a2, $ad, $b4, $12, $ff, $8e, $47, $73, $59, $85, $09, $35, $41, $5e, $74
-.byte $84, $9b, $a1, $ae, $b3, $12, $ff, $8e, $57, $7b, $5d, $5f, $0a, $c0, $df, $e0
-.byte $e1, $83, $9c, $a0, $af, $b2, $16, $ff, $89, $0b, $c1, $dd, $5c, $76, $04, $9d
-.byte $9f, $b0, $14, $ff, $88, $43, $ff, $23, $0c, $c2, $44, $01, $77, $02, $ff, $82
-.byte $9e, $b1, $05, $ff, $81, $43, $0f, $ff, $87, $de, $22, $0d, $34, $45, $24, $78
-.byte $11, $ff, $81, $43, $07, $ff, $87, $c9, $21, $00, $03, $46, $2a, $79, $04, $ff
-.byte $83, $69, $58, $82, $12, $ff, $84, $25, $20, $0f, $32, $02, $01, $81, $7a, $03
-.byte $ff, $85, $47, $73, $59, $85, $43, $0f, $ff, $89, $43, $ff, $26, $1f, $10, $3e
-.byte $48, $01, $7c, $03, $ff, $84, $57, $7b, $5d, $5f, $03, $ff, $85, $43, $ff, $69
-.byte $58, $82, $0a, $ff, $87, $27, $00, $11, $48, $49, $56, $7c, $0b, $ff, $84, $47
-.byte $73, $59, $85, $09, $ff, $88, $43, $28, $00, $12, $01, $4a, $55, $3b, $0b, $ff
-.byte $84, $57, $7b, $5d, $5f, $05, $ff, $81, $43, $05, $ff, $86, $1c, $13, $01, $4b
-.byte $54, $7e, $03, $ff, $81, $43, $04, $ff, $83, $69, $58, $82, $0f, $ff, $86, $00
-.byte $14, $01, $4c, $53, $7f, $05, $ff, $87, $43, $ff, $47, $73, $59, $85, $43, $0e
-.byte $ff, $87, $00, $15, $01, $4d, $52, $80, $30, $06, $ff, $84, $57, $7b, $5d, $5f
-.byte $09, $ff, $83, $69, $58, $82, $03, $ff, $87, $19, $16, $2c, $4e, $51, $81, $31
-.byte $0d, $ff, $81, $43, $04, $ff, $84, $47, $73, $59, $85, $04, $ff, $84, $17, $5b
-.byte $4f, $50, $08, $ff, $81, $43, $0b, $ff, $84, $57, $7b, $5d, $5f, $04, $ff, $84
-.byte $29, $18, $2f, $18, $38, $ff, $02, $3f, $82, $0f, $cf, $04, $af, $02, $33, $82
-.byte $00, $0c, $04, $aa, $84, $32, $40, $50, $00, $02, $aa, $86, $ea, $ba, $aa, $cc
-.byte $77, $00, $02, $af, $8d, $ef, $ab, $fe, $ff, $33, $a0, $aa, $2a, $ca, $ff, $ee
-.byte $ff, $33, $03, $aa, $82, $cc, $ef, $02, $ff, $87, $f3, $bb, $ea, $aa, $fc, $aa
-.byte $fd, $02, $ff, $81, $fb, $04, $ff, $81, $fb, $ff, $ff, $ff, $24, $00, $71, $ff
-.byte $8d, $00, $0c, $0d, $0e, $0f, $15, $ff, $16, $17, $18, $19, $1a, $1f, $0c, $ff
-.byte $83, $48, $71, $72, $1c, $ff, $85, $46, $49, $70, $73, $9c, $03, $ff, $8b, $16
-.byte $15, $ff, $24, $25, $19, $26, $ff, $17, $1a, $29, $0d, $ff, $85, $45, $4a, $6f
-.byte $74, $9b, $1b, $ff, $85, $44, $4b, $6e, $75, $9a, $03, $ff, $8c, $24, $25, $19
-.byte $29, $15, $ff, $0c, $0d, $2d, $ff, $0c, $2e, $0c, $ff, $85, $43, $4c, $6d, $76
-.byte $99, $1b, $ff, $86, $31, $4d, $6c, $77, $98, $9d, $02, $ff, $8a, $16, $00, $ff
-.byte $2f, $19, $18, $19, $1a, $19, $30, $0d, $ff, $88, $68, $41, $4e, $6b, $78, $97
-.byte $9e, $b9, $18, $ff, $89, $02, $40, $4f, $6a, $d9, $da, $db, $01, $bb, $17, $ff
-.byte $81, $03, $03, $01, $85, $dd, $de, $df, $e0, $bc, $17, $ff, $89, $04, $01, $51
-.byte $01, $2c, $e2, $e3, $e4, $bd, $17, $ff, $88, $05, $3d, $52, $01, $e5, $e6, $e7
-.byte $e8, $0d, $ff, $83, $bf, $c8, $3e, $09, $ff, $87, $3c, $53, $66, $e9, $ea, $eb
-.byte $ec, $0c, $ff, $84, $af, $ab, $5d, $3f, $08, $ff, $88, $07, $3b, $54, $65, $ed
-.byte $ee, $ef, $f0, $0c, $ff, $84, $b0, $f6, $27, $42, $07, $ff, $88, $1e, $08, $3a
-.byte $55, $64, $f1, $f2, $f3, $0d, $ff, $83, $dc, $e1, $22, $08, $ff, $86, $1d, $09
-.byte $39, $56, $63, $d2, $0f, $ff, $81, $3e, $09, $ff, $87, $20, $1c, $0a, $38, $57
-.byte $62, $d3, $15, $ff, $8f, $bf, $c8, $3e, $ff, $21, $01, $0b, $37, $58, $61, $d4
-.byte $fb, $f4, $b2, $be, $10, $ff, $86, $af, $ab, $5d, $3f, $ff, $23, $02, $01, $89
-.byte $36, $59, $60, $fd, $fc, $a9, $b1, $01, $c3, $07, $ff, $83, $bf, $c8, $3e, $05
-.byte $ff, $86, $b0, $f6, $27, $42, $ff, $23, $02, $01, $84, $35, $5a, $5f, $f5, $04
-.byte $01, $81, $c4, $06, $ff, $84, $af, $ab, $5d, $3f, $05, $ff, $83, $dc, $e1, $22
-.byte $02, $ff, $81, $23, $02, $01, $85, $34, $5b, $5e, $f7, $f8, $02, $01, $82, $c1
-.byte $c5, $06, $ff, $84, $b0, $f6, $27, $42, $05, $ff, $81, $3e, $04, $ff, $81, $23
-.byte $02, $01, $88, $33, $ff, $47, $f9, $fa, $06, $ae, $c2, $07, $ff, $83, $dc, $e1
-.byte $22, $08, $ff, $81, $3e, $02, $ff, $84, $23, $01, $10, $32, $02, $ff, $82, $14
-.byte $1b, $05, $ff, $86, $3e, $bf, $c8, $3e, $ff, $3e, $08, $ff, $83, $bf, $c8, $3e
-.byte $02, $ff, $83, $23, $01, $11, $03, $ff, $83, $bf, $c8, $3e, $04, $ff, $85, $af
-.byte $ab, $5d, $3f, $3e, $05, $ff, $8c, $af, $ab, $5d, $af, $ab, $5d, $3f, $3e, $2b
-.byte $28, $01, $12, $02, $ff, $84, $af, $ab, $5d, $3f, $04, $ff, $84, $b0, $f6, $27
-.byte $42, $05, $ff, $8c, $af, $ab, $5d, $3f, $b0, $f6, $27, $42, $ff, $2a, $01, $13
-.byte $03, $ff, $86, $b0, $f6, $27, $42, $ff, $3e, $02, $ff, $84, $dc, $e1, $22, $3e
-.byte $04, $ff, $88, $3e, $b0, $f6, $27, $42, $dc, $e1, $22, $08, $ff, $83, $dc, $e1
-.byte $22, $0e, $ff, $84, $dc, $e1, $22, $ff, $02, $aa, $02, $55, $04, $0f, $82, $aa
-.byte $66, $02, $55, $04, $00, $82, $aa, $66, $02, $55, $81, $20, $03, $00, $02, $aa
-.byte $83, $a9, $aa, $e2, $02, $f0, $81, $00, $04, $aa, $81, $ae, $02, $ff, $02, $00
-.byte $81, $88, $03, $aa, $93, $ff, $00, $ff, $00, $a8, $2a, $0a, $02, $00, $f0, $00
-.byte $b0, $aa, $a2, $a0, $b0, $60, $f3, $f0, $02, $f0, $ff, $ff, $24, $00, $6a, $ff
-.byte $03, $01, $85, $32, $33, $34, $ff, $35, $02, $3c, $86, $3d, $ff, $46, $01, $ff
-.byte $47, $02, $01, $82, $4c, $4f, $2c, $ff, $87, $34, $50, $51, $ff, $4c, $56, $34
-.byte $02, $5d, $85, $34, $5e, $47, $ff, $61, $02, $3d, $2b, $ff, $82, $1b, $1c, $03
-.byte $ff, $85, $01, $62, $3c, $56, $4f, $15, $ff, $84, $02, $1a, $1d, $3b, $1c, $ff
-.byte $85, $03, $19, $1e, $3a, $3e, $1b, $ff, $85, $04, $e4, $e5, $e6, $3f, $1b, $ff
-.byte $85, $05, $e7, $e8, $e9, $40, $1b, $ff, $86, $06, $16, $21, $37, $41, $d7, $02
-.byte $ff, $84, $6b, $6d, $84, $86, $14, $ff, $8c, $07, $15, $22, $36, $42, $00, $55
-.byte $ff, $6a, $24, $83, $87, $14, $ff, $89, $08, $14, $23, $f5, $43, $d5, $54, $57
-.byte $69, $02, $24, $85, $88, $9a, $9b, $af, $b1, $0d, $ff, $81, $f3, $02, $ff, $82
-.byte $09, $13, $02, $24, $89, $44, $d4, $53, $58, $68, $70, $24, $89, $99, $02, $24
-.byte $81, $b2, $08, $ff, $81, $f3, $07, $ff, $8a, $0a, $12, $25, $24, $45, $d3, $52
-.byte $59, $24, $71, $02, $24, $81, $98, $02, $24, $82, $b3, $c4, $0d, $ff, $85, $f3
-.byte $ff, $0b, $11, $26, $04, $24, $83, $5a, $24, $72, $02, $24, $85, $97, $24, $ac
-.byte $24, $c3, $08, $ff, $81, $f3, $06, $ff, $84, $0c, $10, $27, $31, $03, $24, $8a
-.byte $5b, $24, $73, $7e, $24, $96, $9f, $ab, $24, $c2, $0f, $ff, $88, $0d, $0f, $28
-.byte $30, $48, $d0, $24, $5c, $02, $24, $88, $7d, $8d, $95, $a0, $aa, $24, $c1, $c7
-.byte $06, $ff, $81, $f3, $04, $ff, $81, $f3, $03, $ff, $86, $0e, $29, $2f, $49, $d9
-.byte $4e, $03, $24, $88, $7c, $8e, $94, $a1, $ff, $b7, $24, $c8, $05, $ff, $83, $f3
-.byte $f4, $f3, $03, $ff, $81, $f3, $04, $ff, $85, $2a, $24, $4a, $ff, $4d, $04, $24
-.byte $87, $8f, $93, $a2, $ff, $b8, $bf, $c9, $05, $ff, $82, $f3, $f8, $04, $ff, $82
-.byte $f4, $f3, $03, $ff, $83, $2b, $2d, $4b, $02, $ff, $81, $5f, $02, $24, $89, $7a
-.byte $90, $92, $24, $a7, $ff, $f9, $fc, $ee, $03, $ff, $83, $f3, $f4, $f3, $04, $ff
-.byte $81, $f8, $05, $ff, $81, $2c, $03, $ff, $8d, $2e, $60, $78, $79, $ff, $91, $a4
-.byte $a6, $ba, $f0, $fb, $f7, $f1, $03, $ff, $81, $f8, $07, $ff, $83, $f3, $ff, $f3
-.byte $0c, $ff, $86, $a5, $bb, $fe, $ed, $f6, $ef, $0a, $ff, $83, $f3, $f4, $f3, $1e
-.byte $ff, $82, $f8, $ff, $02, $f3, $14, $ff, $81, $f3, $05, $ff, $81, $f3, $05, $ff
-.byte $02, $f3, $03, $ff, $81, $f3, $0b, $ff, $81, $f3, $0d, $ff, $02, $f3, $81, $f8
-.byte $1e, $ff, $81, $f8, $1a, $ff, $81, $7f, $04, $5f, $85, $df, $ff, $af, $77, $55
-.byte $03, $f5, $84, $fd, $ff, $fa, $ee, $05, $ff, $83, $df, $ff, $fe, $04, $ff, $82
-.byte $df, $f7, $05, $ff, $84, $7f, $dd, $55, $df, $04, $ff, $83, $75, $dd, $57, $02
-.byte $5d, $81, $df, $02, $ff, $81, $5f, $02, $ff, $82, $f7, $fd, $05, $ff, $ff, $ff
-.byte $ff, $24, $00, $77, $ff, $14, $ff, $93, $1c, $46, $5a, $ff, $5a, $8c, $96, $ff
-.byte $5a, $82, $a2, $62, $ff, $5a, $c1, $82, $a2, $c2, $c3, $10, $ff, $81, $c5, $17
-.byte $ff, $83, $00, $01, $02, $02, $ff, $91, $c4, $46, $8c, $ff, $c6, $c7, $ff, $c8
-.byte $62, $a2, $5a, $62, $c3, $5a, $82, $c9, $ca, $05, $ff, $82, $e8, $e9, $02, $ff
-.byte $84, $03, $04, $05, $06, $18, $ff, $88, $ea, $eb, $ff, $07, $08, $09, $0a, $0b
-.byte $02, $ff, $85, $62, $a2, $cb, $ff, $c3, $04, $46, $88, $ff, $c3, $5a, $c6, $46
-.byte $a2, $cc, $ca, $05, $ff, $88, $ec, $ed, $ff, $0c, $0d, $ee, $0f, $10, $1b, $ff
-.byte $85, $11, $12, $13, $14, $15, $1a, $ff, $86, $16, $17, $18, $19, $1a, $1b, $1a
-.byte $ff, $87, $1d, $1e, $1f, $20, $21, $22, $23, $19, $ff, $88, $24, $25, $26, $27
-.byte $28, $29, $2a, $2b, $04, $ff, $83, $d1, $d4, $d8, $11, $ff, $88, $2c, $2d, $2e
-.byte $2f, $30, $31, $32, $33, $04, $ff, $83, $df, $e0, $e1, $11, $ff, $89, $34, $35
-.byte $36, $37, $38, $39, $3a, $3b, $3c, $03, $ff, $83, $e2, $e3, $e4, $05, $ff, $82
-.byte $e8, $e9, $0a, $ff, $89, $3d, $3e, $3f, $40, $41, $42, $43, $44, $45, $0b, $ff
-.byte $82, $ea, $eb, $0a, $ff, $8a, $47, $48, $49, $4a, $4b, $4c, $4d, $4e, $4f, $50
-.byte $0a, $ff, $82, $ec, $ed, $08, $ff, $8c, $d9, $e5, $ff, $51, $52, $53, $54, $55
-.byte $56, $57, $58, $59, $04, $ff, $82, $d9, $e5, $0e, $ff, $8d, $e6, $e7, $ff, $5b
-.byte $5c, $5d, $5e, $5f, $60, $61, $05, $63, $64, $03, $ff, $82, $e6, $e7, $11, $ff
-.byte $8a, $65, $66, $67, $68, $69, $6a, $6b, $6c, $6d, $6e, $16, $ff, $8a, $6f, $70
-.byte $71, $72, $73, $74, $75, $76, $77, $78, $15, $ff, $88, $79, $7a, $7b, $7c, $7d
-.byte $7e, $7f, $80, $02, $81, $83, $83, $84, $93, $12, $ff, $90, $85, $86, $87, $88
-.byte $89, $8a, $8b, $05, $8d, $8e, $8f, $90, $91, $92, $94, $95, $11, $ff, $91, $97
-.byte $98, $99, $9a, $9b, $9c, $9d, $9e, $9f, $a0, $a1, $ff, $a3, $a4, $a5, $a6, $a7
-.byte $08, $ff, $82, $e8, $e9, $06, $ff, $8a, $a8, $a9, $aa, $ab, $ac, $ad, $ae, $af
-.byte $b0, $b1, $03, $ff, $83, $b2, $b3, $b4, $08, $ff, $82, $ea, $eb, $07, $ff, $89
-.byte $b5, $b6, $b7, $b8, $b9, $ba, $bb, $bc, $bd, $0e, $ff, $82, $ec, $ed, $0a, $ff
-.byte $83, $be, $bf, $c0, $55, $ff, $83, $0f, $ff, $0f, $05, $ff, $83, $00, $af, $23
-.byte $04, $00, $84, $cc, $b0, $aa, $e2, $04, $f0, $81, $fc, $03, $ff, $91, $33, $cc
-.byte $3f, $cf, $ff, $0f, $ff, $5f, $df, $0f, $f3, $fc, $ff, $7f, $57, $55, $fd, $04
-.byte $ff, $81, $77, $02, $55, $81, $dd, $03, $ff, $83, $cc, $ff, $7f, $06, $ff, $ff
-.byte $ff, $24, $00, $61, $ff, $84, $a1, $a2, $a3, $a4, $02, $a1, $88, $a6, $ff, $a7
-.byte $a8, $ff, $a8, $a2, $a5, $25, $ff, $84, $1b, $3b, $3c, $60, $09, $ff, $87, $a9
-.byte $a1, $a7, $aa, $ff, $ab, $ac, $02, $ad, $8e, $ae, $ad, $af, $ff, $b0, $a1, $b1
-.byte $ad, $ff, $1a, $1c, $8d, $95, $5f, $1b, $ff, $86, $19, $94, $96, $8d, $5e, $61
-.byte $08, $ff, $89, $aa, $b2, $ff, $b3, $a2, $a5, $b4, $a8, $b5, $09, $ff, $86, $18
-.byte $1d, $3a, $3d, $5d, $62, $1a, $ff, $86, $17, $d5, $d6, $d7, $d8, $63, $08, $ff
-.byte $8c, $b6, $ac, $ae, $a8, $ff, $b4, $a8, $a7, $ab, $ae, $ad, $af, $06, $ff, $86
-.byte $16, $1f, $38, $3f, $5b, $64, $1a, $ff, $87, $15, $20, $37, $40, $5a, $65, $7f
-.byte $07, $ff, $88, $b4, $a1, $ff, $aa, $ac, $b3, $a2, $b5, $0a, $ff, $88, $14, $01
-.byte $36, $41, $59, $66, $7e, $80, $18, $ff, $81, $13, $05, $01, $82, $8c, $81, $17
-.byte $ff, $89, $98, $12, $21, $35, $9e, $01, $67, $7d, $82, $02, $ff, $81, $d4, $14
-.byte $ff, $88, $99, $11, $22, $34, $42, $9d, $68, $7c, $18, $ff, $88, $9a, $10, $23
-.byte $33, $43, $58, $69, $7b, $06, $ff, $82, $cf, $d0, $0f, $ff, $89, $d4, $9b, $9c
-.byte $24, $32, $44, $57, $6a, $7a, $06, $ff, $83, $d1, $d2, $d3, $10, $ff, $87, $0f
-.byte $25, $31, $45, $56, $6b, $79, $02, $ff, $83, $bf, $c0, $c1, $0d, $ff, $81, $d4
-.byte $06, $ff, $86, $0e, $01, $30, $46, $55, $6c, $03, $ff, $83, $c2, $c3, $c4, $10
-.byte $ff, $81, $d4, $02, $ff, $87, $07, $0d, $9f, $2f, $47, $54, $6d, $03, $ff, $83
-.byte $c5, $c6, $ce, $12, $ff, $88, $06, $08, $a0, $26, $2e, $48, $53, $6e, $18, $ff
-.byte $81, $05, $02, $01, $85, $27, $2d, $49, $52, $6f, $0f, $ff, $81, $d4, $08, $ff
-.byte $81, $04, $03, $01, $86, $2c, $4a, $51, $70, $78, $83, $12, $ff, $90, $bf, $c0
-.byte $c1, $ff, $03, $09, $0b, $28, $2b, $4b, $50, $71, $8e, $84, $87, $88, $10, $ff
-.byte $8d, $c2, $c3, $c4, $8b, $8f, $92, $90, $91, $93, $01, $4f, $72, $77, $02, $02
-.byte $83, $89, $ff, $d4, $02, $ff, $83, $bf, $c0, $c1, $09, $ff, $83, $c5, $c6, $ce
-.byte $07, $02, $86, $4e, $73, $76, $85, $86, $8a, $04, $ff, $83, $c2, $c3, $c4, $0c
-.byte $ff, $8a, $cf, $d0, $ff, $0a, $29, $2a, $4c, $4d, $74, $75, $07, $ff, $83, $c5
-.byte $c6, $ce, $02, $ff, $81, $d4, $05, $ff, $82, $cf, $d0, $02, $ff, $83, $d1, $d2
-.byte $d3, $19, $ff, $83, $d1, $d2, $d3, $31, $ff, $04, $0f, $04, $ff, $04, $00, $84
-.byte $8c, $aa, $ee, $ff, $04, $00, $84, $88, $ee, $fe, $ff, $04, $00, $85, $88, $5d
-.byte $df, $fc, $f0, $02, $ff, $85, $0f, $78, $d5, $fd, $00, $02, $ff, $84, $c3, $0c
-.byte $ff, $f5, $02, $ff, $85, $00, $3f, $ff, $00, $0f, $02, $ff, $81, $f3, $03, $ff
-.byte $81, $f0, $04, $ff, $ff, $ff, $ff, $24, $00, $63, $ff, $82, $09, $13, $02, $14
-.byte $8c, $ff, $16, $1a, $1d, $ff, $1e, $1f, $1e, $ff, $1f, $23, $33, $14, $ff, $81
-.byte $3c, $1b, $ff, $95, $09, $34, $36, $23, $ff, $3d, $ff, $3f, $1f, $45, $48, $ff
-.byte $1f, $3d, $ff, $16, $1a, $1d, $4f, $3d, $33, $0c, $ff, $81, $3c, $1e, $ff, $87
-.byte $1f, $ff, $3f, $ff, $1e, $4f, $1a, $02, $50, $91, $1f, $45, $55, $ff, $23, $34
-.byte $13, $ff, $3d, $1a, $36, $50, $ff, $45, $1a, $09, $59, $28, $ff, $81, $b6, $07
-.byte $ff, $81, $b6, $0c, $ff, $81, $b6, $0e, $ff, $81, $b6, $09, $ff, $81, $b6, $0f
-.byte $ff, $81, $b6, $0d, $ff, $81, $b6, $13, $ff, $83, $b6, $ff, $b6, $1e, $ff, $81
-.byte $b6, $1a, $ff, $81, $b6, $03, $ff, $81, $b6, $02, $ff, $81, $b6, $0e, $ff, $82
-.byte $7a, $85, $09, $ff, $83, $a7, $ab, $b0, $02, $ff, $81, $b6, $0e, $ff, $85, $70
-.byte $7b, $86, $91, $9c, $07, $ff, $83, $a8, $ac, $b1, $07, $ff, $83, $19, $22, $2b
-.byte $02, $ff, $8a, $46, $4e, $56, $5e, $67, $71, $b8, $87, $92, $9d, $07, $ff, $85
-.byte $a9, $ad, $b2, $ff, $b6, $03, $ff, $82, $0a, $11, $02, $12, $8d, $2c, $35, $3e
-.byte $47, $12, $57, $5f, $68, $b7, $b9, $88, $93, $9e, $07, $ff, $83, $aa, $ae, $b3
-.byte $05, $ff, $85, $0b, $12, $1b, $24, $2d, $04, $12, $87, $58, $60, $69, $73, $ba
-.byte $bb, $94, $06, $ff, $85, $a7, $ab, $b0, $af, $b4, $05, $ff, $90, $0c, $12, $1c
-.byte $25, $2e, $37, $40, $12, $51, $12, $61, $6a, $74, $7f, $8a, $95, $03, $ff, $87
-.byte $a7, $ab, $b0, $a8, $ac, $b1, $b5, $04, $ff, $83, $02, $06, $0d, $02, $12, $8d
-.byte $26, $2f, $38, $41, $4a, $52, $5a, $62, $6b, $75, $80, $8b, $96, $03, $ff, $89
-.byte $a8, $ac, $b1, $a9, $ad, $b2, $a7, $ab, $b0, $02, $ff, $93, $03, $07, $0e, $15
-.byte $12, $27, $30, $39, $42, $4b, $53, $5b, $63, $6c, $76, $81, $8c, $97, $9f, $02
-.byte $ff, $8e, $a9, $ad, $b2, $aa, $ae, $b3, $a8, $ac, $b1, $ff, $00, $04, $08, $0f
-.byte $02, $12, $8e, $28, $31, $3a, $43, $4c, $54, $5c, $64, $6d, $77, $82, $8d, $98
-.byte $a0, $02, $ff, $9e, $aa, $ae, $b3, $ff, $af, $b4, $a9, $ad, $b2, $ff, $01, $05
-.byte $ff, $10, $17, $20, $29, $32, $3b, $44, $4d, $ff, $5d, $65, $6e, $78, $83, $8e
-.byte $99, $a1, $03, $ff, $90, $af, $b4, $ff, $b5, $ff, $aa, $ae, $b3, $ff, $a7, $ab
-.byte $b0, $ff, $18, $21, $2a, $06, $ff, $86, $66, $6f, $79, $84, $8f, $9a, $02, $ff
-.byte $83, $a7, $ab, $b5, $05, $ff, $86, $af, $b4, $ff, $a8, $ac, $b1, $0e, $ff, $82
-.byte $90, $9b, $02, $ff, $83, $a8, $ac, $b1, $02, $ff, $81, $b6, $02, $ff, $81, $b5
-.byte $02, $ff, $83, $a9, $ad, $b2, $08, $ff, $81, $b6, $09, $ff, $83, $a9, $ad, $b2
-.byte $08, $ff, $83, $aa, $ae, $b3, $07, $ff, $81, $b6, $09, $ff, $84, $b6, $aa, $ae
-.byte $b3, $04, $ff, $81, $b6, $04, $ff, $82, $af, $b4, $03, $ff, $81, $b6, $0f, $ff
-.byte $82, $af, $b4, $09, $ff, $81, $b5, $14, $ff, $81, $b5, $02, $ff, $81, $7f, $03
-.byte $5f, $04, $55, $81, $77, $07, $55, $84, $77, $f5, $d5, $75, $06, $55, $81, $d7
-.byte $02, $f5, $85, $b5, $a5, $f5, $55, $d5, $03, $ff, $85, $bb, $ea, $5f, $55, $dd
-.byte $03, $ff, $82, $ba, $ee, $03, $55, $86, $dd, $ff, $5f, $fb, $7e, $55, $02, $f7
-.byte $02, $fd, $84, $ff, $fd, $ff, $f5, $02, $f5, $ff, $ff, $ff, $24, $00, $62, $ff
-.byte $90, $62, $79, $b6, $79, $bb, $f1, $ff, $bf, $c0, $c1, $f1, $c2, $c1, $c3, $c4
-.byte $c5, $23, $ff, $83, $00, $01, $02, $0a, $ff, $90, $bf, $c0, $c1, $c6, $c7, $c5
-.byte $c4, $c5, $ff, $c1, $c4, $c8, $ff, $79, $bb, $c8, $02, $ff, $85, $03, $04, $05
-.byte $06, $07, $1b, $ff, $85, $08, $09, $0a, $0b, $0c, $09, $ff, $90, $c7, $79, $c9
-.byte $c5, $ff, $ca, $cb, $ff, $c2, $cb, $c2, $ff, $cc, $cb, $cd, $c6, $02, $ff, $85
-.byte $0e, $0f, $10, $11, $12, $1b, $ff, $85, $13, $f2, $f3, $f4, $17, $09, $ff, $85
-.byte $bf, $cb, $c6, $c9, $ce, $0d, $ff, $85, $18, $19, $1a, $1b, $1c, $0f, $ff, $82
-.byte $d2, $d3, $0a, $ff, $87, $1d, $1e, $1f, $20, $21, $22, $23, $0c, $ff, $83, $d4
-.byte $d5, $d6, $08, $ff, $89, $24, $25, $26, $27, $28, $29, $2a, $2b, $2c, $02, $ff
-.byte $82, $d2, $d3, $03, $ff, $82, $d2, $d3, $03, $ff, $83, $d7, $d8, $d9, $08, $ff
-.byte $8d, $2d, $2e, $2f, $30, $31, $32, $33, $34, $35, $ff, $d4, $d5, $d6, $02, $ff
-.byte $89, $d4, $d5, $d6, $ff, $df, $dd, $da, $db, $dc, $08, $ff, $8d, $36, $37, $38
-.byte $39, $3a, $3b, $3c, $3d, $3e, $ff, $d7, $d8, $d9, $02, $ff, $87, $d7, $d8, $d9
-.byte $ff, $e3, $de, $e0, $0a, $ff, $8d, $3f, $40, $41, $42, $43, $44, $45, $46, $47
-.byte $ff, $da, $db, $dc, $02, $ff, $87, $d1, $e5, $e6, $ff, $e4, $e2, $e1, $0a, $ff
-.byte $89, $48, $49, $4a, $4b, $4c, $4d, $4e, $4f, $50, $08, $ff, $83, $e7, $e8, $ea
-.byte $0c, $ff, $89, $51, $52, $53, $54, $55, $56, $57, $58, $59, $09, $ff, $82, $e9
-.byte $ec, $0d, $ff, $88, $5a, $5b, $5c, $5d, $5e, $5f, $60, $61, $09, $ff, $81, $eb
-.byte $0a, $ff, $82, $d2, $d3, $03, $ff, $87, $63, $64, $65, $66, $67, $68, $69, $08
-.byte $ff, $82, $d2, $ed, $09, $ff, $83, $d4, $d5, $d6, $03, $ff, $87, $6a, $6b, $6c
-.byte $6d, $6e, $6f, $70, $07, $ff, $83, $d4, $d5, $d6, $09, $ff, $83, $d7, $d8, $d9
-.byte $03, $ff, $88, $71, $72, $73, $74, $75, $76, $77, $78, $06, $ff, $83, $d7, $d8
-.byte $d9, $09, $ff, $83, $da, $db, $dc, $03, $ff, $88, $7a, $7b, $7c, $7d, $7e, $7f
-.byte $80, $81, $06, $ff, $84, $d1, $e5, $e6, $e1, $0c, $ff, $8b, $82, $83, $84, $85
-.byte $86, $87, $88, $89, $8a, $8b, $8c, $05, $ff, $86, $d2, $d3, $eb, $ff, $d2, $d3
-.byte $09, $ff, $8c, $8d, $8e, $8f, $90, $91, $92, $93, $94, $95, $96, $97, $98, $04
-.byte $ff, $87, $d4, $d5, $d6, $ee, $d4, $d5, $d6, $09, $ff, $8c, $99, $9a, $9b, $9c
-.byte $9d, $9e, $9f, $a0, $a1, $a2, $a3, $a4, $04, $ff, $87, $d7, $d8, $d9, $ef, $d7
-.byte $d8, $d9, $06, $ff, $8f, $d2, $d3, $a5, $a6, $a7, $a8, $a9, $aa, $ab, $ac, $ad
-.byte $ae, $af, $b0, $b1, $04, $ff, $89, $d1, $e5, $e6, $f0, $da, $db, $dc, $df, $dd
-.byte $03, $ff, $88, $d4, $d5, $d6, $ff, $b2, $b3, $b4, $b5, $03, $ff, $85, $b7, $b8
-.byte $b9, $ba, $0d, $06, $ff, $83, $e7, $e8, $ea, $02, $ff, $88, $e3, $de, $df, $dd
-.byte $ff, $d7, $d8, $d9, $08, $ff, $83, $bc, $bd, $be, $09, $ff, $82, $e9, $ec, $02
-.byte $ff, $88, $e4, $e2, $e3, $de, $e0, $d1, $e5, $e6, $14, $ff, $81, $eb, $05, $ff
-.byte $83, $e4, $e2, $e1, $13, $ff, $81, $3f, $03, $0f, $02, $cf, $02, $ff, $81, $33
-.byte $03, $00, $87, $cc, $55, $dd, $ff, $f3, $00, $cf, $02, $ff, $83, $d5, $ed, $0f
-.byte $02, $00, $81, $fc, $04, $ff, $86, $00, $30, $00, $cc, $3f, $cf, $03, $ff, $85
-.byte $03, $0c, $ff, $f3, $fc, $03, $ff, $02, $00, $82, $0f, $00, $04, $ff, $81, $f3
-.byte $03, $f0, $04, $ff, $ff, $ff, $ff, $24, $00, $62, $ff, $8a, $0d, $1f, $32, $ff
-.byte $9e, $af, $7b, $ff, $d2, $dd, $02, $de, $82, $af, $df, $04, $ff, $84, $00, $01
-.byte $02, $03, $1c, $ff, $02, $04, $82, $06, $07, $0a, $ff, $96, $9e, $e0, $32, $ff
-.byte $de, $1f, $32, $e1, $ff, $1f, $d2, $ff, $e2, $e0, $e3, $e1, $ff, $08, $09, $0a
-.byte $0b, $0c, $1b, $ff, $86, $0e, $0f, $cf, $11, $12, $13, $09, $ff, $86, $e4, $af
-.byte $e5, $dd, $ff, $e1, $02, $dd, $8f, $0d, $ff, $32, $e4, $dd, $e1, $dd, $e6, $ff
-.byte $14, $15, $16, $17, $18, $19, $10, $ff, $81, $e7, $09, $ff, $85, $1a, $1b, $1c
-.byte $1d, $1e, $0a, $ff, $8b, $e3, $1f, $e0, $ff, $af, $e8, $0d, $ff, $32, $ff, $e1
-.byte $02, $dd, $81, $0d, $02, $ff, $86, $20, $21, $22, $23, $24, $25, $1a, $ff, $86
-.byte $26, $27, $28, $29, $2a, $2b, $0a, $ff, $8c, $0d, $1f, $32, $e4, $e8, $0d, $e2
-.byte $ff, $e3, $dd, $32, $e6, $03, $ff, $87, $dc, $d7, $2d, $2e, $2f, $30, $31, $19
-.byte $ff, $88, $d6, $d8, $35, $36, $37, $38, $39, $3a, $18, $ff, $88, $d5, $d9, $3d
-.byte $3e, $3f, $40, $41, $42, $02, $ff, $83, $c0, $c1, $c2, $13, $ff, $87, $d4, $da
-.byte $45, $46, $47, $48, $49, $02, $ff, $84, $c3, $c4, $c5, $c6, $13, $ff, $87, $d3
-.byte $db, $4d, $4e, $4f, $50, $51, $02, $ff, $84, $c7, $c8, $c9, $ca, $03, $ff, $83
-.byte $c0, $c1, $c2, $0c, $ff, $88, $d0, $d1, $54, $55, $56, $57, $58, $59, $02, $ff
-.byte $83, $cb, $cc, $cd, $03, $ff, $84, $c3, $c4, $c5, $c6, $0d, $ff, $87, $5a, $5b
-.byte $5c, $5d, $5e, $5f, $60, $05, $ff, $87, $c0, $c1, $c2, $c7, $c8, $c9, $ca, $0e
-.byte $ff, $86, $61, $62, $63, $64, $65, $66, $04, $ff, $87, $c3, $c4, $c5, $c6, $cb
-.byte $cc, $cd, $0f, $ff, $86, $67, $68, $69, $6a, $6b, $6c, $04, $ff, $84, $c7, $c8
-.byte $c9, $ca, $12, $ff, $87, $6d, $6e, $6f, $70, $71, $72, $73, $03, $ff, $83, $cb
-.byte $cc, $cd, $0a, $ff, $83, $c0, $c1, $c2, $06, $ff, $87, $74, $75, $76, $77, $78
-.byte $79, $7a, $0f, $ff, $84, $c3, $c4, $c5, $c6, $06, $ff, $87, $7c, $7d, $7e, $7f
-.byte $80, $81, $82, $0f, $ff, $84, $c7, $c8, $c9, $ca, $05, $ff, $89, $83, $84, $85
-.byte $86, $87, $88, $89, $8a, $8b, $0e, $ff, $83, $cb, $cc, $cd, $02, $ff, $8d, $c0
-.byte $c1, $c2, $ff, $8c, $8d, $8e, $8f, $90, $91, $92, $93, $94, $0a, $ff, $83, $c0
-.byte $c1, $c2, $05, $ff, $8e, $c3, $c4, $c5, $c6, $ff, $95, $96, $97, $98, $99, $9a
-.byte $9b, $9c, $9d, $09, $ff, $84, $c3, $c4, $c5, $c6, $05, $ff, $8f, $c7, $c8, $c9
-.byte $ca, $ff, $9f, $a0, $a1, $a2, $ff, $a3, $a4, $a5, $a6, $a7, $08, $ff, $84, $c7
-.byte $c8, $c9, $ca, $05, $ff, $83, $cb, $cc, $cd, $02, $ff, $88, $a8, $a9, $aa, $ab
-.byte $ff, $ac, $ad, $ae, $0a, $ff, $83, $cb, $cc, $cd, $11, $ff, $82, $b0, $b1, $27
-.byte $ff, $81, $3f, $03, $0f, $82, $cf, $5f, $02, $ff, $81, $33, $03, $00, $84, $44
-.byte $75, $dd, $ff, $03, $00, $83, $c0, $74, $75, $02, $ff, $81, $cc, $03, $ff, $85
-.byte $ba, $e6, $31, $cc, $00, $02, $ff, $85, $33, $ab, $ef, $f3, $00, $02, $ff, $8a
-.byte $00, $ff, $fa, $ee, $ff, $f0, $33, $00, $f0, $00, $03, $ff, $83, $f0, $f3, $f0
-.byte $04, $ff, $82, $f3, $f0, $ff, $ff, $24, $00, $41, $ff, $81, $f8, $23, $ff, $82
-.byte $14, $15, $02, $16, $8c, $17, $37, $3f, $ff, $40, $4c, $4d, $ff, $4e, $51, $52
-.byte $53, $30, $ff, $89, $40, $4c, $4d, $54, $60, $16, $ff, $65, $4c, $02, $65, $8b
-.byte $16, $66, $ff, $67, $40, $ff, $14, $4c, $17, $6c, $53, $27, $ff, $81, $f8, $02
-.byte $ff, $93, $52, $4c, $4e, $ff, $6e, $16, $73, $54, $37, $ff, $14, $16, $6e, $16
-.byte $74, $17, $82, $73, $16, $03, $83, $28, $ff, $81, $f8, $3c, $ff, $81, $f8, $07
-.byte $ff, $82, $11, $12, $17, $ff, $81, $f8, $04, $ff, $85, $1f, $a9, $02, $99, $a2
-.byte $06, $ff, $87, $89, $8a, $a4, $a5, $bf, $c0, $d9, $02, $ff, $82, $ef, $f0, $0a
-.byte $ff, $86, $20, $04, $7e, $95, $05, $a1, $04, $ff, $82, $71, $88, $03, $00, $87
-.byte $be, $c1, $d8, $da, $ff, $f6, $f7, $0a, $ff, $8b, $27, $5d, $80, $92, $9e, $4f
-.byte $50, $62, $ff, $70, $72, $04, $00, $84, $0b, $c2, $08, $db, $0d, $ff, $85, $29
-.byte $5e, $f9, $fa, $9f, $02, $00, $85, $61, $64, $6f, $00, $86, $03, $00, $84, $0c
-.byte $c3, $09, $dc, $0d, $ff, $84, $31, $5f, $8b, $90, $07, $00, $81, $85, $03, $00
-.byte $84, $bb, $c4, $0a, $dd, $08, $ff, $82, $ef, $f0, $04, $ff, $83, $6d, $8d, $8f
-.byte $06, $00, $81, $75, $03, $00, $85, $0d, $ba, $c5, $d4, $de, $08, $ff, $82, $f6
-.byte $f7, $04, $ff, $86, $a3, $06, $8e, $00, $4b, $01, $03, $00, $81, $76, $02, $00
-.byte $85, $0e, $ab, $b9, $c6, $d3, $10, $ff, $89, $a6, $a7, $41, $4a, $55, $00, $68
-.byte $6b, $77, $02, $00, $84, $13, $ac, $07, $c7, $05, $ff, $82, $ef, $f0, $08, $ff
-.byte $91, $1d, $22, $2f, $a8, $42, $49, $56, $5c, $69, $6a, $78, $00, $0f, $9c, $ad
-.byte $b7, $c8, $05, $ff, $82, $f6, $f7, $08, $ff, $88, $1e, $21, $30, $33, $43, $48
-.byte $57, $5b, $02, $ff, $87, $79, $00, $93, $9b, $ae, $b6, $c9, $0b, $ff, $82, $ef
-.byte $f0, $05, $ff, $85, $32, $44, $47, $58, $5a, $02, $ff, $8c, $7a, $00, $94, $9a
-.byte $af, $b5, $ca, $d1, $df, $e8, $ff, $f8, $03, $ff, $85, $f8, $ff, $f3, $f1, $f2
-.byte $06, $ff, $83, $45, $46, $59, $03, $ff, $81, $7b, $05, $00, $84, $cb, $d0, $e0
-.byte $e7, $08, $ff, $82, $f4, $f5, $08, $ff, $82, $ef, $f0, $02, $ff, $8a, $7c, $7d
-.byte $96, $98, $b1, $b3, $cc, $cf, $e1, $e6, $03, $ff, $81, $f8, $07, $ff, $81, $f8
-.byte $05, $ff, $83, $f3, $f1, $f2, $05, $ff, $82, $97, $b2, $02, $ff, $83, $ce, $e2
-.byte $e5, $09, $ff, $81, $f8, $02, $ff, $88, $ef, $f0, $ff, $ef, $f0, $ff, $f4, $f5
-.byte $02, $ff, $82, $ef, $f0, $06, $ff, $82, $e3, $e4, $02, $ff, $81, $f8, $04, $ff
-.byte $81, $f8, $03, $ff, $88, $f3, $f1, $f2, $f3, $f1, $f2, $ff, $f8, $03, $ff, $82
-.byte $f6, $f7, $10, $ff, $81, $f8, $03, $ff, $85, $f4, $f5, $ff, $f4, $f5, $35, $ff
-.byte $81, $df, $04, $5f, $81, $df, $02, $ff, $81, $7f, $06, $55, $84, $ff, $d7, $bf
-.byte $ed, $04, $ff, $85, $f7, $f5, $bb, $aa, $ef, $02, $ff, $85, $f7, $ff, $55, $bb
-.byte $ee, $04, $ff, $84, $df, $5f, $ff, $fa, $03, $ff, $87, $7f, $7d, $55, $5d, $57
-.byte $dd, $df, $02, $ff, $82, $dd, $f7, $02, $f5, $03, $ff, $82, $fc, $ff, $ff, $ff
-.byte $ff
-
-_data_dd75_indexed:
-.byte $00, $00, $b0, $06, $50, $06, $f4, $05, $a0, $05, $50, $05, $00, $05, $b8, $04
-.byte $78, $04, $38, $04, $f8, $03, $c0, $03, $88, $03, $58, $03, $28, $03, $fa, $02
-.byte $d0, $02, $a8, $02, $80, $02, $5c, $02, $3c, $02, $1c, $02, $fc, $01, $e0, $01
-.byte $c4, $01, $ac, $01, $94, $01, $7d, $01, $68, $01, $54, $01, $40, $01, $2e, $01
-.byte $1e, $01, $0e, $01, $fe, $00, $f0, $00, $e2, $00, $d6, $00, $ca, $00, $be, $00
-.byte $b4, $00, $aa, $00, $a0, $00, $97, $00, $8f, $00, $87, $00, $7f, $00, $78, $00
-.byte $71, $00, $6b, $00, $65, $00, $5f, $00, $5a, $00, $55, $00, $50, $00, $4b, $00
-.byte $47, $00, $43, $00, $3f, $00, $3c, $00, $38, $00, $00, $00, $0c, $00, $0c, $00
-.byte $0c, $00, $0c, $00, $0d, $00, $0e, $00, $1f, $00, $00, $00, $01, $00, $02, $00
-.byte $03, $00, $04, $00, $05, $00, $06, $00, $07, $00, $08, $00, $09, $00, $0a, $00
-.byte $0b, $00, $0c, $00, $0d, $00, $0e, $00, $0f, $00, $80, $00, $81, $00, $82, $00
-.byte $83, $00, $84, $00, $85, $00, $86, $00, $87, $00, $88, $00, $89, $00, $8a, $00
-.byte $8b, $00, $8c, $00, $8d, $00, $8e, $00, $8f, $00
-
-trigger_game_over:
+stop_all_music:
   lda #$00
-  sta APU_SND_CHN
-  sta a:temp_var_700
-  sta a:temp_var_7a1
+  sta APU_SND_CHN             ; Disable all sound channels
+  sta a:temp_var_700          ; Clear variable
+  sta a:song_state            ; Clear song state
   rts
 
 _func_de4b:
   lda temp_var_d2
-  beq trigger_game_over
-  lda temp_var_d3
+  beq stop_all_music
+  lda audio_track
   asl a
   tax
-  lda a:_data_e280_indexed,X
+  lda a:_data_e280,X
   sta temp_var_d4
-  lda a:_data_e281_indexed,X
+  lda a:_data_e280+1,X
   sta temp_var_d5
   ldx temp_var_d4
   ldy temp_var_d5
-  jsr _func_de80
+  jsr _func_de80          ; func_de80(e280, e280+1)
   rts
 
 _func_de65: ; unreferenced?
+; Clear $7A1 and call e1ce with song pointer
   lda #$00
-  sta a:temp_var_7a1
-  lda temp_var_d3
+  sta a:song_state            ; Clear song state
+  lda audio_track
   asl a
   tax
-  lda a:_data_e280_indexed,X
+  lda a:_data_e280,X
   sta temp_var_d4
-  lda a:_data_e281_indexed,X
+  lda a:_data_e280+1,X
   sta temp_var_d5
   ldx temp_var_d4
   ldy temp_var_d5
@@ -9425,7 +8862,7 @@ _func_de65: ; unreferenced?
 
 _func_de80:
   lda #$00
-  sta APU_SND_CHN
+  sta APU_SND_CHN             ; Disable all sound channels
   stx temp_var_cc
   sty z:$CD
   ldx #$3B
@@ -9788,10 +9225,10 @@ _label_e12a:
 _label_e13a:
   asl a
   tax
-  lda a:_data_dd75_indexed,X
+  lda a:_data_dd75,X
   sta APU_PL1_LO,Y
   inx
-  lda a:_data_dd75_indexed,X
+  lda a:_data_dd75,X
   ora #$08
   sta APU_PL1_HI,Y
   ldx a:temp_var_708
@@ -9847,7 +9284,7 @@ _func_e19a:  ; unreferenced?
   bne _label_e178
 
 _func_e19f:
-  lda a:temp_var_7a1
+  lda a:song_state
   beq _label_e178
   ldx #$01
 _label_e1a6:
@@ -9868,13 +9305,13 @@ _label_e1b3:
   sta a:temp_var_700
   sta APU_SND_CHN
   lda #$00
-  sta a:temp_var_7a1
+  sta a:song_state
   rts
 
 _func_e1ce:
   stx temp_var_7a2
   sty temp_var_7a3
-  lda a:temp_var_7a1
+  lda a:song_state
   beq _label_e1da
   rts
 _label_e1da:
@@ -9882,7 +9319,7 @@ _label_e1da:
   sta temp_var_74d
   lda #$00
   sta a:temp_var_700
-  sta APU_SND_CHN
+  sta APU_SND_CHN             ; Disable all sound channels
   ldx #$01
 _label_e1ea:
   lda a:temp_var_700,X
@@ -9899,7 +9336,7 @@ _label_e1f7:
   cpx #$54
   bne _label_e1f7
   lda #$ff
-  sta temp_var_7a1
+  sta song_state
   ldx temp_var_7a2
   ldy temp_var_7a3
   jmp _func_de80
@@ -9922,9 +9359,9 @@ _func_e216:
   lda temp_var_d7
   asl a
   tax
-  lda a:_data_e290_indexed,X
+  lda a:_data_e290,X
   sta temp_var_d4
-  lda a:_data_e291_indexed,X
+  lda a:_data_e290+1,X
   sta temp_var_d5
 _label_e236:
   ldy #$00
@@ -9974,261 +9411,19 @@ _label_e275:
   sta temp_var_d8
   jmp _func_e216
 
-_data_e280_indexed:
-.byte $88
+_data_e280:
+.incbin "data/data_e280.bin"
+; 0xe788
+; 0xea55
+; 0xe2c0
+; 0xe2c0
+; 0xeecf
+; 0xe608
+; 0xefdb
+; 0xf12f
 
-_data_e281_indexed:
-.byte $e7, $55, $ea, $c0, $e2, $c0, $e2, $cf, $ee, $08, $e6, $db, $ef, $2f, $f1
-
-_data_e290_indexed:
-.byte $9c
-
-_data_e291_indexed:
-.byte $e2, $a2, $e2, $a8, $e2, $ae, $e2, $b4, $e2, $ba, $e2, $01, $44, $9c, $c8, $c0
-.byte $ff, $01, $09, $ab, $3b, $c1, $ff, $01, $40, $80, $4a, $28, $ff, $01, $40, $80
-.byte $63, $28, $ff, $01, $5f, $a4, $3d, $c0, $ff, $01, $5e, $db, $8c, $43, $ff, $ca
-.byte $e2, $bc, $e3, $88, $e4, $2c, $e5, $02, $0f, $82, $04, $84, $18, $87, $f0, $8f
-.byte $0b, $8d, $06, $8e, $02, $18, $00, $02, $00, $02, $1d, $02, $1e, $02, $1f, $02
-.byte $20, $04, $29, $02, $20, $04, $29, $02, $20, $06, $22, $08, $2a, $02, $22, $02
-.byte $21, $02, $20, $04, $29, $02, $20, $04, $29, $02, $20, $06, $22, $08, $2a, $02
-.byte $22, $02, $21, $02, $20, $04, $29, $02, $20, $04, $29, $04, $20, $02, $1e, $04
-.byte $27, $02, $1e, $02, $1e, $04, $27, $12, $25, $82, $5a, $8f, $0c, $0c, $00, $02
-.byte $20, $02, $21, $03, $22, $01, $24, $02, $25, $06, $25, $02, $24, $02, $25, $04
-.byte $27, $08, $25, $02, $24, $02, $25, $03, $29, $01, $28, $02, $29, $04, $2c, $02
-.byte $29, $02, $25, $02, $20, $06, $23, $06, $22, $04, $20, $03, $1e, $01, $1d, $02
-.byte $1e, $02, $20, $02, $22, $04, $2a, $01, $24, $01, $25, $03, $29, $01, $28, $02
-.byte $29, $06, $2e, $81, $95, $03, $29, $01, $00, $81, $00, $10, $27, $82, $08, $8f
-.byte $0f, $08, $00, $02, $00, $02, $1d, $02, $1e, $02, $1f, $02, $20, $04, $29, $02
-.byte $20, $04, $29, $02, $20, $06, $22, $08, $2a, $02, $22, $02, $21, $02, $20, $04
-.byte $29, $02, $20, $04, $29, $02, $20, $06, $22, $08, $2a, $02, $22, $02, $21, $02
-.byte $20, $04, $29, $02, $20, $04, $29, $04, $20, $03, $1e, $01, $1d, $02, $1e, $06
-.byte $27, $14, $25, $8a, $8b, $50, $00, $8c, $50, $00, $89, $82, $04, $84, $18, $87
-.byte $f0, $8f, $04, $8e, $02, $40, $00, $04, $1d, $04, $00, $04, $19, $04, $14, $04
-.byte $12, $04, $1b, $08, $00, $04, $1d, $04, $00, $04, $19, $04, $14, $04, $12, $04
-.byte $1b, $04, $00, $04, $12, $04, $11, $04, $19, $08, $00, $82, $5a, $8f, $0a, $0c
-.byte $00, $04, $19, $03, $1e, $01, $20, $02, $22, $06, $1e, $02, $1d, $02, $1e, $04
-.byte $1f, $08, $22, $02, $1b, $02, $19, $03, $20, $01, $1f, $02, $20, $04, $25, $02
-.byte $25, $02, $20, $02, $1d, $04, $20, $02, $1b, $06, $1a, $04, $1d, $03, $1b, $01
-.byte $1d, $02, $1b, $02, $1d, $02, $1e, $04, $22, $01, $21, $01, $22, $08, $25, $04
-.byte $1d, $04, $20, $06, $22, $06, $23, $04, $24, $82, $04, $8f, $0d, $08, $00, $02
-.byte $00, $02, $1d, $02, $1e, $02, $1f, $02, $1d, $04, $20, $02, $1d, $04, $20, $02
-.byte $1d, $06, $1e, $08, $22, $02, $22, $02, $21, $02, $1d, $04, $20, $02, $1d, $04
-.byte $20, $02, $1d, $06, $1e, $08, $22, $02, $22, $02, $21, $02, $1d, $04, $20, $02
-.byte $1d, $04, $20, $04, $1d, $03, $16, $01, $15, $02, $16, $06, $1e, $14, $1d, $8a
-.byte $8b, $30, $00, $8c, $30, $00, $89, $82, $1e, $8f, $08, $8e, $02, $40, $00, $20
-.byte $00, $0c, $19, $04, $19, $0c, $14, $04, $14, $10, $19, $0c, $00, $04, $19, $8f
-.byte $0a, $06, $1e, $02, $1e, $06, $1e, $02, $1e, $06, $1f, $02, $1f, $06, $1f, $02
-.byte $1f, $06, $20, $02, $20, $06, $20, $02, $20, $06, $20, $06, $22, $04, $1d, $06
-.byte $1b, $02, $1b, $06, $1b, $02, $1b, $06, $14, $02, $14, $04, $14, $04, $14, $06
-.byte $20, $06, $20, $04, $20, $8f, $0e, $0c, $00, $04, $20, $04, $19, $02, $11, $02
-.byte $14, $04, $19, $04, $1d, $04, $1e, $02, $16, $02, $19, $04, $1e, $04, $1e, $04
-.byte $19, $02, $11, $02, $14, $04, $19, $04, $1d, $04, $1e, $02, $16, $02, $19, $04
-.byte $1e, $04, $1e, $04, $19, $02, $11, $02, $14, $04, $19, $04, $19, $04, $12, $04
-.byte $12, $04, $14, $04, $14, $04, $19, $02, $11, $02, $14, $04, $19, $04, $14, $0c
-.byte $19, $04, $19, $8a, $8b, $18, $00, $8c, $18, $00, $89, $8f, $06, $8e, $03, $04
-.byte $44, $04, $44, $04, $44, $04, $44, $02, $3f, $02, $44, $02, $3f, $02, $44, $02
-.byte $3f, $02, $44, $02, $3f, $02, $44, $8f, $0b, $02, $3f, $01, $44, $01, $44, $02
-.byte $3f, $01, $44, $01, $44, $02, $3f, $01, $44, $01, $44, $02, $3f, $01, $44, $01
-.byte $44, $02, $3f, $01, $44, $01, $44, $02, $3f, $01, $44, $01, $44, $02, $3f, $01
-.byte $44, $01, $44, $02, $3f, $01, $44, $01, $44, $02, $3f, $01, $44, $01, $44, $02
-.byte $3f, $01, $44, $01, $44, $02, $3f, $01, $44, $01, $44, $02, $3f, $01, $44, $01
-.byte $44, $02, $3f, $01, $44, $01, $44, $02, $3f, $01, $44, $01, $44, $02, $3f, $01
-.byte $44, $01, $44, $02, $3f, $01, $44, $01, $44, $02, $3f, $01, $44, $01, $44, $02
-.byte $3f, $01, $44, $01, $44, $02, $3f, $01, $44, $01, $44, $02, $3f, $01, $44, $01
-.byte $44, $02, $3f, $01, $44, $01, $44, $02, $3f, $01, $44, $01, $44, $02, $3f, $01
-.byte $44, $01, $44, $02, $3f, $01, $44, $01, $44, $8f, $0c, $02, $40, $02, $40, $02
-.byte $44, $02, $40, $02, $40, $02, $40, $02, $44, $02, $40, $02, $40, $02, $40, $02
-.byte $44, $02, $40, $02, $40, $02, $40, $01, $44, $01, $42, $01, $44, $01, $42, $8a
-.byte $8b, $ae, $00, $8c, $ae, $00, $89, $12, $e6, $a7, $e6, $f9, $e6, $4d, $e7, $02
-.byte $0f, $82, $bb, $84, $18, $87, $f0, $8f, $0d, $8e, $05, $8d, $02, $06, $1d, $06
-.byte $1b, $06, $19, $12, $1b, $0c, $19, $06, $1d, $06, $1b, $06, $19, $12, $1b, $0c
-.byte $19, $08, $1d, $08, $1b, $08, $19, $08, $1d, $08, $20, $08, $1e, $24, $1d, $06
-.byte $1b, $06, $19, $06, $1d, $06, $1b, $06, $19, $12, $1b, $0c, $19, $06, $1d, $06
-.byte $1b, $06, $19, $12, $1b, $0c, $19, $30, $19, $12, $12, $12, $14, $0c, $12, $06
-.byte $1d, $06, $1b, $06, $19, $12, $1b, $0c, $19, $06, $1d, $06, $1b, $06, $19, $12
-.byte $1b, $0c, $19, $08, $1d, $08, $1b, $08, $19, $08, $1d, $08, $20, $08, $25, $24
-.byte $23, $06, $22, $06, $20, $06, $22, $06, $20, $06, $1e, $0c, $19, $0c, $18, $06
-.byte $19, $06, $1e, $06, $1d, $06, $1b, $12, $19, $0c, $18, $30, $19, $06, $12, $0c
-.byte $14, $0c, $16, $12, $18, $88, $82, $05, $84, $18, $87, $80, $8f, $04, $8e, $05
-.byte $12, $14, $06, $14, $12, $14, $06, $14, $12, $15, $06, $15, $12, $15, $06, $15
-.byte $12, $16, $06, $16, $12, $16, $06, $16, $12, $17, $06, $17, $12, $17, $06, $17
-.byte $12, $16, $06, $16, $12, $16, $06, $16, $12, $15, $06, $15, $12, $15, $06, $15
-.byte $30, $14, $8a, $12, $16, $12, $18, $0c, $16, $8b, $49, $00, $8c, $0a, $00, $06
-.byte $16, $0c, $18, $0c, $19, $12, $1b, $88, $82, $3a, $8f, $0a, $8e, $05, $12, $19
-.byte $06, $19, $12, $19, $06, $19, $12, $19, $06, $19, $12, $19, $06, $19, $12, $19
-.byte $06, $19, $12, $19, $06, $19, $12, $19, $06, $19, $12, $19, $06, $19, $12, $1e
-.byte $06, $1e, $12, $1e, $06, $1e, $12, $1e, $06, $1e, $12, $1e, $06, $1e, $12, $19
-.byte $06, $19, $12, $19, $06, $19, $8a, $12, $1e, $12, $20, $0c, $1e, $8b, $4b, $00
-.byte $8c, $06, $00, $06, $1e, $0c, $20, $0c, $1e, $12, $20, $88, $8f, $0b, $8e, $05
-.byte $06, $41, $06, $41, $06, $41, $0c, $40, $0c, $42, $06, $40, $06, $41, $06, $41
-.byte $06, $41, $06, $41, $06, $41, $06, $41, $06, $43, $06, $41, $08, $40, $08, $40
-.byte $08, $40, $08, $42, $08, $44, $08, $42, $06, $41, $06, $41, $06, $41, $0c, $43
-.byte $06, $42, $06, $42, $06, $41, $88, $92, $e7, $91, $e8, $62, $e9, $13, $ea, $02
-.byte $0f, $82, $04, $84, $0c, $87, $d0, $8f, $0c, $8e, $03, $8d, $06, $06, $0d, $06
-.byte $16, $04, $14, $06, $0f, $06, $16, $04, $14, $06, $0d, $06, $16, $04, $14, $06
-.byte $0f, $06, $16, $82, $5a, $02, $1d, $02, $1e, $10, $20, $04, $00, $02, $1e, $02
-.byte $1d, $02, $1e, $02, $1d, $02, $1b, $02, $19, $06, $1d, $0a, $20, $04, $00, $02
-.byte $1e, $02, $1d, $02, $1e, $02, $1d, $02, $1b, $02, $19, $02, $1b, $02, $1d, $0c
-.byte $19, $04, $00, $02, $1e, $02, $1d, $02, $1e, $02, $1d, $02, $1b, $02, $19, $10
-.byte $00, $0c, $00, $8a, $8b, $69, $00, $8c, $22, $00, $8e, $05, $8a, $8b, $72, $00
-.byte $8c, $22, $00, $8e, $07, $8a, $8b, $7b, $00, $8c, $22, $00, $04, $14, $10, $1d
-.byte $04, $00, $03, $1e, $01, $1d, $02, $1e, $04, $22, $12, $20, $04, $00, $03, $1e
-.byte $01, $1d, $03, $1e, $01, $1d, $02, $1b, $02, $19, $10, $1d, $04, $00, $04, $1e
-.byte $03, $1d, $01, $1e, $02, $1b, $12, $19, $04, $00, $04, $25, $03, $24, $01, $25
-.byte $02, $22, $12, $20, $04, $00, $04, $25, $03, $24, $01, $25, $02, $22, $12, $20
-.byte $04, $00, $03, $1e, $01, $1d, $02, $1e, $04, $22, $12, $20, $04, $00, $04, $1e
-.byte $03, $1d, $01, $1e, $02, $1b, $1e, $19, $8e, $08, $8a, $8b, $e0, $00, $8c, $7b
-.byte $00, $04, $00, $8e, $03, $03, $29, $01, $28, $03, $29, $01, $2d, $03, $26, $01
-.byte $25, $03, $26, $01, $2b, $03, $25, $01, $24, $02, $25, $06, $2c, $04, $00, $88
-.byte $82, $04, $84, $02, $87, $18, $8f, $09, $8e, $03, $3c, $00, $04, $14, $02, $00
-.byte $06, $25, $04, $22, $02, $1d, $02, $1e, $04, $20, $0c, $00, $04, $00, $02, $1d
-.byte $02, $1b, $02, $1d, $04, $22, $02, $20, $10, $00, $04, $00, $02, $1d, $02, $1b
-.byte $02, $1d, $04, $20, $02, $20, $10, $00, $04, $00, $02, $1e, $02, $1d, $02, $1e
-.byte $02, $1d, $02, $1b, $02, $19, $06, $1d, $06, $1b, $04, $00, $8a, $8b, $53, $00
-.byte $8c, $0e, $00, $8e, $05, $8a, $8b, $5c, $00, $8c, $0e, $00, $8e, $07, $8a, $8b
-.byte $65, $00, $8c, $0e, $00, $04, $00, $04, $19, $03, $18, $01, $19, $02, $16, $12
-.byte $14, $04, $00, $04, $19, $03, $18, $01, $19, $02, $16, $12, $14, $04, $00, $03
-.byte $11, $01, $0f, $02, $11, $04, $16, $12, $14, $04, $00, $04, $19, $03, $18, $01
-.byte $19, $02, $16, $12, $14, $04, $00, $03, $11, $01, $0f, $02, $11, $04, $16, $12
-.byte $14, $04, $00, $03, $11, $01, $0f, $02, $11, $04, $16, $12, $14, $04, $00, $04
-.byte $19, $03, $18, $01, $19, $02, $16, $12, $14, $04, $00, $04, $1d, $02, $1c, $06
-.byte $1b, $0c, $19, $04, $00, $8e, $08, $8a, $8b, $ce, $00, $8c, $65, $00, $20, $00
-.byte $88, $82, $44, $8f, $0a, $8e, $03, $40, $00, $06, $19, $06, $16, $04, $0f, $10
-.byte $14, $06, $19, $06, $16, $04, $0f, $10, $14, $06, $19, $06, $16, $04, $0f, $10
-.byte $14, $06, $19, $06, $16, $04, $0f, $0c, $14, $04, $00, $8a, $8b, $31, $00, $8c
-.byte $08, $00, $8e, $05, $8a, $8b, $3a, $00, $8c, $08, $00, $8e, $07, $8a, $8b, $43
-.byte $00, $8c, $08, $00, $06, $19, $06, $16, $04, $0f, $10, $14, $06, $19, $06, $16
-.byte $04, $0f, $10, $14, $06, $19, $06, $16, $04, $0f, $10, $14, $06, $19, $06, $16
-.byte $04, $0f, $10, $14, $06, $19, $06, $16, $04, $0f, $10, $14, $06, $19, $06, $16
-.byte $04, $0f, $10, $14, $06, $19, $06, $16, $04, $0f, $10, $14, $04, $00, $04, $14
-.byte $02, $17, $06, $18, $10, $19, $8e, $08, $8a, $8b, $8e, $00, $8c, $43, $00, $8e
-.byte $03, $02, $15, $02, $00, $02, $15, $02, $00, $02, $13, $02, $00, $02, $13, $02
-.byte $00, $02, $14, $02, $00, $02, $14, $06, $00, $01, $14, $01, $15, $01, $16, $01
-.byte $18, $88, $8f, $0a, $8e, $06, $06, $3d, $06, $3d, $04, $3d, $06, $3d, $06, $3d
-.byte $04, $3d, $06, $3d, $06, $3d, $04, $3d, $06, $3d, $06, $3d, $04, $3d, $04, $3e
-.byte $02, $3f, $04, $3f, $02, $3f, $02, $3f, $02, $3f, $02, $3e, $02, $3e, $02, $41
-.byte $02, $3e, $02, $3f, $02, $3f, $01, $41, $01, $41, $02, $3f, $8a, $8b, $1c, $00
-.byte $8c, $1c, $00, $89, $5f, $ea, $43, $ec, $01, $ee, $89, $ee, $02, $0f, $82, $96
-.byte $84, $18, $87, $f0, $8e, $09, $8d, $06, $8f, $0d, $08, $0d, $08, $0a, $06, $0f
-.byte $04, $08, $02, $08, $02, $0a, $02, $0c, $04, $0d, $04, $0d, $04, $0a, $04, $0a
-.byte $04, $0f, $02, $0f, $04, $08, $02, $08, $02, $0a, $02, $0c, $82, $08, $01, $1c
-.byte $03, $1d, $04, $1d, $08, $1d, $02, $00, $02, $1b, $02, $1d, $02, $1e, $04, $1d
-.byte $04, $1b, $06, $19, $0a, $14, $02, $00, $02, $1b, $02, $1d, $02, $1e, $04, $1d
-.byte $04, $1b, $06, $1d, $0a, $20, $02, $00, $02, $1b, $02, $1d, $02, $1e, $04, $1d
-.byte $04, $1b, $10, $19, $10, $00, $01, $1f, $03, $20, $04, $20, $08, $20, $02, $00
-.byte $02, $22, $02, $24, $02, $25, $04, $24, $04, $22, $02, $1f, $04, $20, $0a, $1d
-.byte $02, $00, $02, $22, $02, $24, $02, $25, $04, $24, $04, $22, $02, $1f, $04, $20
-.byte $0a, $19, $02, $00, $02, $1b, $02, $1d, $02, $1e, $04, $1d, $04, $1b, $10, $19
-.byte $10, $00, $04, $00, $03, $1d, $01, $1e, $02, $20, $06, $25, $02, $00, $02, $1e
-.byte $02, $20, $02, $22, $04, $20, $04, $1e, $06, $20, $0a, $19, $02, $00, $02, $1e
-.byte $02, $20, $02, $22, $04, $20, $04, $1e, $03, $1d, $01, $1e, $02, $20, $0a, $25
-.byte $02, $00, $02, $22, $02, $24, $02, $25, $02, $28, $04, $27, $12, $25, $10, $00
-.byte $04, $00, $03, $1d, $01, $1e, $02, $20, $06, $25, $04, $00, $02, $1e, $02, $1d
-.byte $02, $1e, $02, $1d, $02, $1e, $02, $22, $06, $20, $0a, $1d, $02, $00, $02, $1b
-.byte $02, $1d, $02, $1e, $02, $22, $02, $21, $02, $22, $02, $21, $06, $20, $06, $25
-.byte $04, $19, $02, $00, $02, $1b, $02, $1d, $02, $1e, $04, $1d, $04, $1b, $10, $19
-.byte $10, $00, $04, $00, $03, $1d, $01, $1e, $02, $20, $06, $25, $02, $00, $02, $27
-.byte $02, $29, $02, $2a, $04, $28, $04, $27, $06, $25, $0a, $20, $02, $00, $02, $27
-.byte $02, $29, $02, $2a, $04, $28, $04, $27, $06, $25, $0a, $20, $02, $00, $02, $1b
-.byte $02, $1d, $02, $1e, $04, $1d, $04, $1b, $10, $19, $10, $00, $04, $1d, $04, $1d
-.byte $08, $1d, $02, $00, $02, $1b, $02, $1d, $02, $1e, $04, $1d, $04, $1b, $06, $19
-.byte $0a, $14, $02, $00, $02, $1b, $02, $1d, $02, $1e, $02, $1d, $02, $1c, $02, $1d
-.byte $02, $1c, $02, $1d, $02, $1c, $02, $1d, $02, $1c, $02, $1d, $06, $25, $02, $00
-.byte $02, $22, $02, $24, $02, $25, $04, $29, $04, $27, $10, $25, $10, $00, $01, $1f
-.byte $03, $20, $04, $20, $08, $20, $02, $00, $02, $22, $02, $24, $02, $25, $04, $24
-.byte $04, $22, $02, $1f, $04, $20, $0a, $1d, $02, $00, $02, $22, $02, $24, $02, $25
-.byte $04, $24, $04, $22, $02, $1f, $04, $20, $0a, $19, $02, $00, $02, $1b, $02, $1d
-.byte $02, $1e, $04, $1d, $04, $1b, $10, $19, $10, $00, $8a, $8b, $2e, $00, $8c, $2e
-.byte $00, $89, $82, $04, $87, $18, $87, $f0, $8e, $09, $8f, $0c, $40, $00, $01, $13
-.byte $03, $14, $04, $14, $08, $14, $02, $00, $02, $12, $02, $14, $02, $16, $04, $14
-.byte $04, $12, $06, $14, $0a, $11, $02, $00, $02, $12, $02, $14, $02, $16, $04, $14
-.byte $04, $12, $06, $14, $0a, $1d, $02, $00, $02, $12, $02, $14, $02, $16, $04, $14
-.byte $04, $12, $10, $11, $10, $00, $01, $1c, $03, $1d, $04, $1d, $08, $1d, $02, $00
-.byte $02, $1e, $02, $20, $02, $22, $04, $20, $04, $1e, $02, $1c, $04, $1d, $0a, $19
-.byte $02, $00, $02, $1e, $02, $20, $02, $22, $04, $20, $04, $1e, $06, $1d, $0a, $22
-.byte $02, $00, $02, $12, $02, $14, $02, $16, $04, $14, $04, $12, $10, $11, $10, $00
-.byte $04, $00, $03, $19, $01, $1b, $02, $1d, $06, $22, $02, $00, $02, $16, $02, $18
-.byte $02, $19, $04, $18, $04, $16, $06, $14, $0a, $11, $02, $00, $02, $16, $02, $18
-.byte $02, $19, $04, $18, $04, $16, $03, $14, $01, $16, $02, $18, $06, $16, $04, $19
-.byte $02, $00, $02, $1e, $02, $20, $02, $22, $04, $20, $04, $1e, $10, $1d, $10, $00
-.byte $04, $00, $03, $19, $01, $1b, $02, $1d, $06, $22, $04, $00, $02, $16, $02, $15
-.byte $02, $16, $02, $15, $02, $16, $02, $19, $06, $1d, $0a, $19, $02, $00, $02, $12
-.byte $02, $14, $02, $16, $02, $19, $02, $18, $02, $19, $02, $18, $06, $1d, $06, $22
-.byte $04, $11, $02, $00, $02, $12, $02, $14, $02, $16, $04, $14, $04, $12, $10, $11
-.byte $10, $00, $04, $00, $03, $19, $01, $1b, $02, $1d, $06, $22, $02, $00, $02, $1e
-.byte $02, $20, $02, $22, $04, $23, $04, $22, $06, $20, $0a, $1d, $02, $00, $02, $1e
-.byte $02, $20, $02, $22, $04, $23, $04, $22, $06, $20, $0a, $1d, $02, $00, $02, $12
-.byte $02, $14, $02, $16, $04, $14, $04, $12, $10, $11, $10, $00, $04, $14, $04, $14
-.byte $08, $14, $02, $00, $02, $12, $02, $14, $02, $16, $04, $14, $04, $12, $06, $14
-.byte $0a, $11, $02, $00, $02, $12, $02, $14, $02, $16, $02, $14, $02, $13, $02, $14
-.byte $02, $13, $02, $14, $02, $13, $02, $14, $02, $13, $02, $14, $06, $1d, $02, $00
-.byte $02, $1e, $02, $20, $02, $22, $04, $20, $04, $1e, $10, $1d, $10, $00, $01, $1c
-.byte $03, $1d, $04, $1d, $08, $1d, $02, $00, $02, $1e, $02, $20, $02, $22, $04, $20
-.byte $04, $1e, $02, $1c, $04, $1d, $0a, $19, $02, $00, $02, $1e, $02, $20, $02, $22
-.byte $04, $20, $04, $1e, $06, $1d, $0a, $22, $02, $00, $02, $12, $02, $14, $02, $16
-.byte $04, $15, $04, $12, $10, $11, $10, $00, $8a, $8b, $0c, $00, $8c, $0c, $00, $89
-.byte $82, $20, $84, $18, $87, $f0, $8e, $09, $8d, $06, $8f, $0d, $08, $19, $08, $16
-.byte $06, $1b, $04, $14, $02, $14, $02, $16, $02, $18, $04, $19, $04, $19, $04, $16
-.byte $04, $16, $04, $1b, $02, $1b, $04, $14, $02, $14, $02, $16, $02, $18, $04, $19
-.byte $04, $19, $04, $16, $04, $16, $04, $1b, $02, $1b, $04, $14, $02, $14, $02, $16
-.byte $02, $18, $04, $19, $04, $19, $04, $16, $04, $16, $06, $1b, $04, $14, $02, $14
-.byte $02, $16, $02, $18, $04, $19, $04, $19, $04, $16, $02, $16, $04, $1b, $04, $1b
-.byte $02, $1b, $02, $14, $02, $14, $02, $16, $02, $18, $04, $19, $04, $19, $04, $16
-.byte $04, $16, $03, $1b, $01, $1a, $02, $1b, $04, $14, $02, $14, $02, $16, $02, $18
-.byte $8a, $8b, $2e, $00, $8c, $2e, $00, $89, $8f, $01, $8e, $45, $20, $3e, $8f, $09
-.byte $8e, $04, $04, $42, $04, $42, $04, $42, $04, $42, $04, $3e, $03, $42, $01, $40
-.byte $03, $3e, $01, $41, $02, $44, $02, $42, $04, $3d, $01, $41, $03, $42, $04, $3d
-.byte $01, $41, $03, $43, $03, $3d, $01, $41, $02, $44, $02, $42, $02, $3d, $01, $41
-.byte $01, $41, $02, $44, $02, $42, $8a, $8b, $20, $00, $8c, $20, $00, $89, $d9, $ee
-.byte $42, $ef, $8e, $ef, $cc, $ef, $02, $0f, $82, $49, $84, $18, $87, $f0, $8f, $0d
-.byte $8e, $00, $8d, $08, $04, $00, $08, $20, $01, $27, $01, $28, $0a, $29, $0c, $00
-.byte $02, $28, $02, $29, $02, $2e, $04, $2c, $02, $29, $10, $27, $04, $00, $04, $27
-.byte $06, $2c, $02, $27, $10, $2a, $04, $00, $04, $20, $06, $29, $02, $20, $10, $29
-.byte $04, $00, $02, $28, $02, $29, $02, $2e, $04, $2c, $02, $29, $10, $20, $04, $00
-.byte $04, $29, $06, $2e, $02, $29, $10, $2c, $04, $00, $04, $2c, $04, $2f, $02, $2c
-.byte $02, $27, $10, $2a, $04, $00, $04, $20, $02, $29, $04, $2c, $02, $29, $20, $25
-.byte $88, $82, $4b, $84, $18, $87, $f0, $8f, $0c, $8e, $00, $10, $00, $04, $19, $01
-.byte $18, $01, $17, $01, $16, $01, $15, $07, $14, $11, $00, $04, $1b, $01, $1a, $01
-.byte $19, $01, $18, $19, $17, $04, $19, $01, $19, $01, $18, $01, $17, $19, $16, $8a
-.byte $03, $19, $03, $18, $02, $19, $03, $18, $03, $16, $02, $14, $8b, $41, $00, $8c
-.byte $0a, $00, $04, $1d, $04, $22, $01, $1b, $01, $1c, $16, $1d, $88, $82, $b4, $8f
-.byte $0d, $8e, $00, $10, $00, $0c, $19, $08, $00, $0c, $00, $0a, $1d, $02, $00, $04
-.byte $1d, $06, $20, $08, $00, $02, $00, $0a, $1b, $02, $00, $04, $1b, $08, $20, $08
-.byte $00, $8a, $08, $19, $08, $00, $8b, $2f, $00, $8c, $06, $00, $82, $22, $04, $19
-.byte $04, $1e, $01, $19, $01, $19, $82, $78, $16, $19, $88, $8f, $0c, $8e, $03, $04
-.byte $3f, $03, $44, $01, $44, $04, $3f, $04, $44, $88, $e5, $ef, $36, $f0, $79, $f0
-.byte $bc, $f0, $02, $0f, $82, $02, $84, $18, $87, $78, $8f, $0d, $8e, $13, $8d, $05
-.byte $04, $1d, $04, $00, $04, $20, $04, $00, $03, $1b, $01, $1a, $02, $1b, $06, $20
-.byte $04, $00, $04, $1d, $04, $00, $04, $20, $04, $00, $03, $22, $01, $21, $02, $22
-.byte $06, $1b, $04, $00, $04, $1d, $04, $00, $04, $20, $04, $00, $03, $1b, $01, $1a
-.byte $02, $1b, $06, $20, $04, $1d, $04, $19, $04, $00, $04, $17, $04, $00, $06, $15
-.byte $06, $14, $04, $00, $88, $82, $04, $8f, $0d, $8e, $07, $04, $19, $04, $11, $04
-.byte $1d, $04, $0d, $04, $00, $02, $13, $06, $00, $04, $18, $04, $19, $04, $11, $04
-.byte $1d, $04, $0d, $04, $00, $04, $13, $04, $00, $04, $18, $04, $19, $04, $11, $04
-.byte $1d, $04, $0d, $04, $00, $02, $13, $06, $00, $04, $18, $04, $00, $04, $19, $08
-.byte $1b, $06, $19, $06, $18, $04, $00, $88, $82, $24, $8f, $0c, $8e, $07, $04, $00
-.byte $04, $19, $04, $00, $04, $16, $04, $00, $04, $1b, $04, $00, $04, $14, $04, $00
-.byte $04, $19, $04, $00, $04, $16, $04, $00, $04, $1b, $04, $00, $04, $14, $04, $00
-.byte $04, $19, $04, $00, $04, $16, $04, $00, $04, $1b, $04, $00, $04, $14, $04, $00
-.byte $04, $19, $08, $17, $06, $15, $06, $14, $04, $00, $88, $8f, $0d, $8e, $03, $04
-.byte $40, $02, $44, $02, $41, $04, $40, $02, $44, $02, $41, $02, $40, $02, $40, $02
-.byte $44, $04, $40, $02, $41, $02, $44, $02, $41, $04, $40, $02, $44, $02, $41, $02
-.byte $40, $02, $40, $02, $44, $02, $41, $04, $40, $02, $40, $04, $44, $02, $44, $02
-.byte $44, $02, $44, $04, $40, $02, $44, $02, $41, $04, $40, $02, $44, $02, $41, $04
-.byte $40, $02, $40, $04, $44, $02, $44, $02, $44, $02, $44, $02, $43, $01, $43, $01
-.byte $43, $02, $43, $04, $41, $02, $43, $02, $43, $02, $43, $02, $43, $01, $43, $01
-.byte $43, $02, $43, $04, $40, $01, $42, $01, $42, $02, $42, $02, $42, $88, $39, $f1
-.byte $64, $f1, $8b, $f1, $b0, $f1, $02, $0f, $82, $49, $84, $18, $87, $f0, $8e, $07
-.byte $8d, $06, $8f, $0e, $01, $19, $02, $19, $01, $19, $02, $18, $02, $18, $02, $16
-.byte $02, $16, $02, $18, $02, $18, $01, $19, $02, $19, $01, $19, $02, $1b, $02, $1b
-.byte $10, $1d, $89, $82, $49, $84, $18, $87, $f0, $8e, $07, $01, $16, $02, $16, $01
-.byte $16, $02, $14, $02, $14, $02, $12, $02, $12, $02, $14, $02, $14, $01, $16, $02
-.byte $16, $01, $16, $02, $18, $02, $18, $10, $1a, $89, $82, $2a, $8e, $07, $01, $16
-.byte $02, $16, $01, $16, $02, $14, $02, $14, $02, $12, $02, $12, $02, $14, $02, $14
-.byte $01, $12, $02, $12, $01, $12, $02, $14, $02, $14, $82, $78, $10, $16, $89, $8f
-.byte $0d, $8e, $03, $01, $43, $02, $43, $01, $43, $02, $41, $02, $41, $01, $43, $02
-.byte $43, $01, $43, $02, $41, $02, $41, $01, $43, $02, $43, $01, $43, $02, $41, $02
-.byte $41, $10, $44, $89, $00, $00, $00, $00, $00, $00, $00, $00, $00
+_data_e290:
+.incbin "data/data_e290.bin"
 
 _data_f1de_indexed:
 .byte $30
@@ -10241,229 +9436,57 @@ _data_f1df_indexed:
 _data_f20e_indexed:
 .byte $00, $20, $20, $23, $23, $00, $21, $01, $01, $01, $01, $01, $21
 
-_data_f21b_indexed:
-.byte $00
+; done
+_data_f21b:
+.incbin "data/data_f21b.bin"
 
-_data_f21c_indexed:
-.byte $00, $4f, $f2, $55, $f2, $5d, $f2, $65, $f2, $45, $f6, $5e, $f6, $31, $f6, $35
-.byte $f6, $39, $f6, $3d, $f6, $41, $f6, $93, $f2
+; done
+_data_f235:
+.incbin "data/data_f235.bin"
 
-_data_f235_indexed:
-.byte $00
+; done
+_data_f26b:
+.incbin "data/data_f26b.bin"
 
-_data_f236_indexed:
-.byte $00, $00, $f8, $00, $f8, $00, $f8, $00, $f8, $00, $f8, $48, $98, $00, $f8, $00
-.byte $f8, $00, $f8, $00, $f8, $00, $f8, $44, $78, $7b, $f2, $87, $f2, $ff, $ff, $81
-.byte $f2, $8d, $f2, $81, $f2, $ff, $ff, $87, $f2, $7b, $f2, $7b, $f2, $ff, $ff, $8d
-.byte $f2, $81, $f2, $ff, $ff
+; done
+_data_f2c8:
+.incbin "data/data_f2c8.bin"
 
-_data_f26b_indexed:
-.byte $75
-
-_data_f26c_indexed:
-.byte $f2, $7b, $f2, $81, $f2, $7b, $f2, $81, $f2, $02, $02, $ff, $ff, $ff, $ff, $02
-.byte $02, $01, $02, $03, $04, $02, $02, $05, $06, $07, $08, $02, $02, $a6, $a7, $a8
-.byte $a9, $02, $02, $aa, $ab, $ac, $ad, $97, $f2, $ff, $ff, $05, $01, $94, $95, $a1
-.byte $9f, $97, $00, $00, $77, $78, $7c, $82, $8b, $8c, $a3, $a4, $a5, $a6, $a7, $a8
-.byte $ad, $ae, $af, $b0, $b5, $b6, $b7, $b8, $6d, $6e, $6f, $72, $84, $8a, $a1, $a2
-.byte $a9, $aa, $ab, $ac, $b1, $b2, $b3, $b4, $b9, $ba, $bb, $bc
-
-_data_f2c8_indexed:
-.byte $75
-
-_data_f2c9_indexed:
-.byte $f2, $ce, $f2, $d4, $f2, $02, $02, $e8, $e9, $ea, $eb, $02, $02, $ec, $ed, $ee
-.byte $ef, $02, $02, $bd, $be, $bf, $c0
-
-_data_f2e0_indexed:
-.byte $00
-
-_data_f2e1_indexed:
-.byte $00, $ee, $f2, $fe, $f2, $0e, $f3, $1e, $f3, $2e, $f3, $3e, $f3, $01, $11, $02
-.byte $12, $02, $11, $01, $10, $11, $01, $10, $00, $10, $01, $11, $02, $02, $11, $22
-.byte $12, $02, $12, $22, $11, $22, $12, $02, $11, $22, $11, $02, $12, $02, $10, $11
-.byte $12, $01, $12, $11, $10, $11, $03, $02, $01, $12, $01, $02, $03, $11, $31, $22
-.byte $12, $12, $32, $22, $11, $32, $12, $22, $31, $31, $11, $22, $32, $10, $20, $11
-.byte $12, $12, $23, $11, $10, $23, $13, $22, $21, $21, $10, $22, $23, $01, $11, $21
-.byte $12, $02, $11, $22, $10, $22, $11, $02, $10, $21, $11, $01, $12
+; done
+_data_f2e0:
+.incbin "data/data_f2e0.bin"
 
 _data_f34e_indexed:
 .byte $01, $01, $02, $03, $04, $01, $02, $03, $04, $01, $02, $03, $04
 
-_data_f35b_indexed:
-.byte $00
+; done
+_data_f35b:
+.incbin "data/data_f35b.bin"
 
-_data_f35c_indexed:
-.byte $00, $69, $f3, $89, $f3, $a9, $f3, $c9, $f3, $e9, $f3, $09, $f4, $01, $01, $01
-.byte $01, $02, $01, $01, $01, $01, $01, $02, $01, $01, $01, $02, $02, $01, $02, $02
-.byte $01, $01, $02, $01, $03, $02, $01, $01, $03, $01, $03, $02, $04, $01, $01, $01
-.byte $01, $01, $01, $01, $02, $01, $01, $02, $01, $02, $01, $02, $01, $02, $01, $01
-.byte $02, $01, $01, $03, $02, $02, $01, $03, $01, $01, $02, $03, $04, $01, $01, $01
-.byte $01, $02, $01, $01, $01, $01, $01, $02, $01, $02, $01, $01, $02, $01, $02, $01
-.byte $02, $01, $02, $03, $01, $01, $01, $02, $03, $04, $01, $02, $03, $01, $01, $01
-.byte $01, $01, $02, $01, $01, $01, $01, $02, $01, $02, $02, $01, $01, $02, $01, $02
-.byte $01, $01, $03, $02, $01, $02, $01, $01, $03, $01, $04, $02, $03, $01, $01, $01
-.byte $01, $01, $01, $01, $02, $01, $02, $01, $01, $01, $01, $02, $02, $02, $01, $01
-.byte $02, $01, $01, $02, $03, $02, $03, $01, $01, $02, $01, $03, $04, $01, $01, $01
-.byte $01, $01, $01, $02, $01, $01, $02, $01, $01, $02, $01, $02, $01, $01, $02, $02
-.byte $01, $03, $02, $01, $01, $01, $01, $03, $02, $03, $01, $04, $02
+; done
+_data_f429:
+.incbin "data/data_f429.bin"
 
-_data_f429_indexed:
-.byte $31
+; done
+_data_f674:
+.incbin "data/data_f674.bin"
 
-_data_f42a_indexed:
-.byte $f4, $31, $f5, $b1, $f4, $b1, $f5, $24, $63, $14, $24, $55, $62, $14, $50, $60
-.byte $31, $56, $40, $61, $45, $11, $60, $10, $44, $32, $61, $13, $20, $43, $34, $15
-.byte $37, $63, $32, $33, $35, $12, $34, $25, $32, $10, $12, $34, $15, $62, $46, $23
-.byte $44, $13, $31, $17, $10, $22, $16, $51, $31, $41, $65, $10, $62, $11, $20, $30
-.byte $14, $34, $11, $34, $27, $13, $60, $37, $26, $33, $32, $32, $11, $53, $52, $61
-.byte $52, $12, $64, $57, $67, $67, $64, $30, $31, $64, $30, $27, $10, $63, $40, $17
-.byte $31, $67, $60, $13, $47, $10, $40, $13, $33, $60, $21, $33, $63, $60, $66, $64
-.byte $61, $35, $50, $21, $12, $62, $53, $17, $41, $11, $42, $63, $65, $14, $54, $62
-.byte $30, $30, $12, $33, $30, $36, $60, $14, $55, $11, $15, $64, $24, $33, $61, $10
-.byte $26, $13, $35, $31, $62, $66, $37, $26, $12, $45, $54, $14, $35, $55, $16, $42
-.byte $34, $45, $15, $54, $66, $35, $17, $25, $65, $43, $63, $46, $15, $32, $64, $32
-.byte $47, $33, $66, $46, $20, $56, $45, $66, $25, $21, $23, $13, $26, $45, $14, $51
-.byte $46, $17, $43, $56, $34, $16, $63, $55, $66, $25, $37, $15, $30, $36, $47, $15
-.byte $57, $41, $27, $25, $67, $24, $36, $13, $37, $54, $27, $21, $16, $44, $57, $36
-.byte $44, $50, $17, $33, $65, $41, $43, $12, $55, $46, $16, $45, $23, $65, $53, $47
-.byte $26, $51, $35, $46, $62, $57, $22, $27, $40, $67, $52, $67, $35, $36, $60, $24
-.byte $56, $65, $51, $44, $23, $25, $53, $64, $50, $17, $55, $46, $17, $40, $51, $34
-.byte $47, $53, $60, $54, $27, $63, $10, $37, $20, $17, $27, $14, $41, $30, $26, $35
-.byte $36, $20, $16, $55, $14, $40, $12, $24, $52, $17, $21, $37, $54, $21, $63, $14
-.byte $46, $30, $13, $34, $26, $44, $11, $36, $23, $65, $42, $64, $50, $25, $45, $16
-.byte $12, $41, $56, $31, $32, $47, $53, $35, $45, $30, $10, $27, $52, $24, $13, $36
-.byte $11, $57, $23, $42, $21, $65, $25, $66, $16, $46, $31, $26, $62, $47, $22, $43
-.byte $67, $60, $37, $55, $62, $33, $57, $44, $15, $62, $27, $65, $22, $61, $67, $25
-.byte $66, $51, $57, $37, $57, $47, $15, $43, $37, $35, $45, $67, $56, $65, $15, $46
-.byte $56, $32, $43, $61, $33, $66, $67, $44, $45, $22, $41, $16, $43, $21, $55, $14
-.byte $55, $23, $10, $42, $13, $61, $56, $54, $37, $26, $66, $44, $67, $12, $17, $15
-.byte $65, $47, $65, $65, $36, $66, $22, $37, $46, $33, $44, $65, $36, $11, $66, $63
-.byte $41, $43, $65, $17, $35, $31, $37, $56, $62, $45, $33, $15, $42, $14, $17, $56
-.byte $14, $54, $55, $64, $46, $27, $35, $16, $26, $53, $57, $45, $50, $15, $37, $32
-.byte $36, $11, $26, $17, $34, $56, $67, $35, $24, $36, $13, $63, $65, $16, $15, $34
-.byte $61, $40, $25, $53, $27, $46, $31, $13, $26, $55, $60, $26, $57, $66, $25, $25
-.byte $56, $47, $54, $16, $27, $64, $25, $45, $35, $23, $46, $27, $32, $36, $53, $25
-.byte $52, $35, $24, $66, $44, $55, $57, $49, $f6, $ff, $ff, $4c, $f6, $ff, $ff, $4f
-.byte $f6, $ff, $ff, $52, $f6, $ff, $ff, $55, $f6, $ff, $ff, $58, $f6, $ff, $ff, $01
-.byte $01, $79, $01, $01, $7a, $01, $01, $7b, $01, $01, $7c, $01, $01, $7d, $02, $02
-.byte $7e, $7f, $80, $81, $62, $f6, $ff, $ff, $04, $04, $69, $6a, $6b, $6c, $6d, $6e
-.byte $6f, $70, $71, $72, $73, $74, $75, $76, $77, $78
+; done
+_data_faff:
+.incbin "data/data_faff.bin"
 
-_data_f674_indexed:
-.byte $78
-
-_data_f675_indexed:
-.byte $f6, $38, $f9, $20, $00, $83, $5b, $5c, $5b, $10, $ff, $b1, $5b, $5c, $5b, $5c
-.byte $5b, $5c, $5b, $5c, $5b, $5c, $5b, $5c, $5b, $5d, $5e, $5d, $1f, $0b, $0c, $0a
-.byte $0d, $0b, $0c, $0a, $0d, $0b, $0c, $0a, $0d, $0b, $0c, $24, $5d, $5e, $5d, $5e
-.byte $5d, $5e, $5d, $5e, $5d, $5e, $5d, $5e, $5d, $5b, $5c, $5b, $20, $02, $ff, $82
-.byte $00, $09, $02, $ff, $82, $00, $09, $02, $ff, $82, $00, $09, $02, $ff, $92, $21
-.byte $5b, $5c, $5b, $5c, $5b, $5c, $5b, $5c, $5b, $5c, $5b, $5c, $5b, $5d, $5e, $5d
-.byte $1f, $0e, $ff, $83, $22, $10, $15, $08, $16, $87, $1c, $1b, $5d, $5b, $5c, $5b
-.byte $20, $0e, $ff, $82, $21, $11, $0a, $ff, $86, $1a, $5b, $5d, $5e, $5d, $1f, $0e
-.byte $ff, $82, $22, $12, $0a, $ff, $86, $19, $5d, $5b, $5c, $5b, $20, $0e, $ff, $83
-.byte $21, $13, $14, $08, $17, $87, $1d, $18, $5b, $5d, $5e, $5d, $1f, $0e, $ff, $92
-.byte $22, $5d, $5e, $5d, $5e, $5d, $5e, $5d, $5e, $5d, $5e, $5d, $5e, $5d, $5b, $5c
-.byte $5b, $20, $0e, $ff, $84, $21, $5b, $10, $15, $06, $16, $88, $1c, $1b, $5e, $5b
-.byte $5d, $5e, $5d, $1f, $0e, $ff, $88, $22, $5d, $11, $53, $54, $41, $f8, $45, $03
-.byte $ff, $87, $1a, $5c, $5d, $5b, $5c, $5b, $20, $0e, $ff, $85, $21, $5b, $11, $42
-.byte $55, $02, $42, $82, $4c, $45, $02, $ff, $87, $1a, $5e, $5b, $5d, $5e, $5d, $1f
-.byte $0e, $ff, $83, $22, $5d, $11, $04, $ff, $04, $30, $82, $1a, $5c, $02, $5d, $83
-.byte $5e, $5d, $20, $0e, $ff, $88, $21, $5d, $11, $53, $43, $4f, $52, $45, $03, $ff
-.byte $87, $1a, $5e, $5d, $5b, $5c, $5b, $1f, $0e, $ff, $83, $22, $5b, $11, $04, $ff
-.byte $04, $30, $87, $1a, $5c, $5b, $5d, $5e, $5d, $20, $0e, $ff, $88, $21, $5d, $11
-.byte $54, $4f, $54, $41, $4c, $03, $ff, $87, $1a, $5e, $5d, $5b, $5c, $5b, $1f, $0e
-.byte $ff, $83, $22, $5b, $12, $02, $ff, $06, $30, $87, $19, $5c, $5b, $5d, $5e, $5d
-.byte $20, $0e, $ff, $84, $21, $5d, $13, $14, $06, $17, $88, $1d, $18, $5e, $5d, $5b
-.byte $5c, $5b, $1f, $0e, $ff, $92, $22, $5b, $5c, $5b, $5c, $5b, $5c, $5b, $5c, $5b
-.byte $5c, $5b, $5c, $5b, $5d, $5e, $5d, $20, $0e, $ff, $84, $21, $5d, $10, $15, $06
-.byte $16, $88, $1c, $1b, $5e, $5d, $5b, $5c, $5b, $1f, $0e, $ff, $83, $22, $5b, $11
-.byte $08, $ff, $87, $1a, $5c, $5b, $5d, $5e, $5d, $20, $0e, $ff, $83, $21, $5d, $11
-.byte $08, $ff, $82, $1a, $5e, $02, $5d, $83, $5e, $5d, $1f, $0e, $ff, $83, $22, $5d
-.byte $11, $08, $ff, $87, $1a, $5e, $5d, $5b, $5c, $5b, $20, $0e, $ff, $83, $21, $5b
-.byte $11, $08, $ff, $87, $1a, $5c, $5b, $5d, $5e, $5d, $1f, $0e, $ff, $83, $22, $5d
-.byte $11, $08, $ff, $82, $1a, $5e, $02, $5d, $83, $5e, $5d, $20, $02, $fc, $02, $ff
-.byte $02, $fc, $02, $ff, $02, $fc, $02, $ff, $02, $fc, $83, $21, $5d, $11, $08, $ff
-.byte $88, $1a, $5e, $5d, $5b, $5c, $5b, $1f, $5f, $02, $ff, $84, $60, $61, $62, $5f
-.byte $02, $ff, $88, $66, $67, $68, $ff, $79, $22, $5b, $12, $08, $ff, $87, $19, $5c
-.byte $5b, $5d, $5e, $5d, $20, $03, $ff, $8e, $75, $74, $73, $71, $70, $6c, $6b, $6a
-.byte $69, $ff, $60, $21, $5d, $12, $08, $ff, $99, $19, $5e, $5d, $5b, $5c, $5b, $1f
-.byte $ff, $5f, $79, $7a, $7b, $7d, $7e, $7f, $80, $81, $83, $85, $5f, $75, $22, $5b
-.byte $13, $14, $06, $17, $c5, $1d, $18, $5c, $5b, $5d, $5e, $5d, $20, $76, $9f, $98
-.byte $97, $96, $95, $94, $90, $89, $88, $87, $86, $76, $9f, $21, $5d, $5e, $5d, $5e
-.byte $5d, $5e, $5d, $5e, $5d, $5e, $5d, $5e, $5d, $5b, $5c, $5b, $1f, $a0, $63, $99
-.byte $9a, $28, $3a, $3b, $3f, $9b, $9c, $9d, $9e, $a0, $63, $22, $5b, $5c, $5b, $5c
-.byte $5b, $5c, $5b, $5c, $5b, $5c, $5b, $5c, $5b, $55, $03, $f5, $81, $75, $04, $55
-.byte $03, $ff, $81, $77, $02, $54, $82, $57, $55, $03, $ff, $81, $77, $04, $55, $03
-.byte $ff, $81, $77, $04, $55, $03, $ff, $81, $77, $04, $55, $03, $ff, $83, $77, $dd
-.byte $ff, $02, $55, $03, $aa, $85, $66, $5d, $53, $55, $f5, $03, $aa, $81, $26, $03
-.byte $f5, $ff, $ff, $20, $00, $20, $ff, $a2, $24, $1f, $0b, $0c, $0a, $0d, $0b, $0c
-.byte $0a, $0d, $0b, $0c, $0a, $0d, $0b, $0c, $24, $1f, $0b, $0c, $0a, $0d, $0b, $0c
-.byte $0a, $0d, $0b, $0c, $0a, $0d, $0b, $0c, $21, $20, $02, $ff, $82, $00, $09, $02
-.byte $ff, $82, $00, $09, $02, $ff, $82, $00, $09, $02, $ff, $82, $21, $20, $02, $ff
-.byte $82, $00, $09, $02, $ff, $82, $00, $09, $02, $ff, $82, $00, $09, $02, $ff, $82
-.byte $22, $1f, $0e, $ff, $82, $22, $1f, $0e, $ff, $82, $21, $20, $0e, $ff, $82, $21
-.byte $20, $0e, $ff, $82, $22, $1f, $0e, $ff, $82, $22, $1f, $0e, $ff, $82, $21, $20
-.byte $0e, $ff, $82, $21, $20, $0e, $ff, $82, $22, $1f, $0e, $ff, $82, $22, $1f, $0e
-.byte $ff, $82, $21, $20, $0e, $ff, $82, $21, $20, $0e, $ff, $82, $22, $1f, $0e, $ff
-.byte $82, $22, $1f, $0e, $ff, $82, $21, $20, $0e, $ff, $82, $21, $20, $0e, $ff, $82
-.byte $22, $1f, $0e, $ff, $82, $22, $1f, $0e, $ff, $82, $21, $20, $0e, $ff, $82, $21
-.byte $20, $0e, $ff, $82, $22, $1f, $0e, $ff, $82, $22, $1f, $0e, $ff, $82, $21, $20
-.byte $0e, $ff, $82, $21, $20, $0e, $ff, $82, $22, $1f, $0e, $ff, $82, $22, $1f, $0e
-.byte $ff, $82, $21, $20, $0e, $ff, $82, $21, $20, $0e, $ff, $82, $22, $1f, $0e, $ff
-.byte $82, $22, $1f, $0e, $ff, $82, $21, $20, $0e, $ff, $82, $21, $20, $0e, $ff, $82
-.byte $22, $1f, $0e, $ff, $82, $22, $1f, $0e, $ff, $82, $21, $20, $0e, $ff, $82, $21
-.byte $20, $0e, $ff, $82, $22, $1f, $0e, $ff, $82, $22, $1f, $0e, $ff, $82, $21, $20
-.byte $0e, $ff, $82, $21, $20, $0e, $ff, $82, $22, $1f, $0e, $ff, $82, $22, $1f, $0e
-.byte $ff, $82, $21, $20, $02, $fc, $02, $ff, $02, $fc, $02, $ff, $02, $fc, $02, $ff
-.byte $02, $fc, $82, $21, $20, $02, $fc, $02, $ff, $02, $fc, $02, $ff, $02, $fc, $02
-.byte $ff, $02, $fc, $82, $22, $42, $04, $30, $03, $ff, $81, $54, $06, $30, $82, $22
-.byte $42, $04, $30, $03, $ff, $81, $54, $06, $30, $82, $21, $53, $04, $30, $0a, $ff
-.byte $82, $21, $53, $04, $30, $0a, $ff, $82, $22, $1f, $0e, $ff, $82, $22, $1f, $0e
-.byte $ff, $82, $21, $20, $0e, $ff, $82, $21, $20, $0e, $ff, $82, $22, $1f, $0e, $ff
-.byte $82, $22, $1f, $0e, $ff, $81, $d5, $03, $f5, $81, $d5, $03, $f5, $81, $dd, $03
-.byte $ff, $81, $dd, $03, $ff, $81, $dd, $03, $ff, $81, $dd, $03, $ff, $81, $dd, $03
-.byte $ff, $81, $dd, $03, $ff, $81, $dd, $03, $ff, $81, $dd, $03, $ff, $81, $dd, $03
-.byte $ff, $81, $dd, $03, $ff, $82, $55, $d5, $02, $f5, $82, $55, $d5, $02, $f5, $81
-.byte $fd, $03, $ff, $81, $fd, $03, $ff, $ff, $ff, $ff
-
-_data_faff_indexed:
-.byte $03
-
-_data_fb00_indexed:
-.byte $fb, $43, $fb, $55, $c5, $c5, $c5, $45, $55, $55, $55, $55, $00, $00, $00, $44
-.byte $54, $54, $57, $55, $00, $00, $00, $44, $55, $55, $55, $55, $00, $00, $00, $44
-.byte $55, $55, $55, $55, $00, $00, $00, $44, $55, $55, $55, $55, $00, $00, $00, $44
-.byte $dd, $ff, $55, $55, $aa, $22, $00, $44, $5d, $53, $55, $f5, $aa, $aa, $aa, $26
-.byte $f5, $f5, $f5, $d5, $f5, $f5, $f5, $d5, $f5, $f5, $f5, $dd, $ff, $ff, $ff, $dd
-.byte $ff, $ff, $ff, $dd, $ff, $ff, $ff, $dd, $ff, $ff, $ff, $dd, $ff, $ff, $ff, $dd
-.byte $ff, $ff, $ff, $dd, $ff, $ff, $ff, $dd, $ff, $ff, $ff, $dd, $ff, $ff, $ff, $dd
-.byte $ff, $ff, $ff, $55, $55, $55, $55, $55, $55, $55, $55, $55, $55, $55, $55, $55
-.byte $55, $55, $55
-
-_data_fb83_indexed:
-.byte $44
-
-_data_fb84_indexed:
-.byte $20, $84, $20, $c4, $20, $04, $21, $44, $21, $84, $21, $c4, $21, $04, $22, $44
-.byte $22, $84, $22, $c4, $22, $50, $24, $50, $24, $50, $24, $50, $24, $50, $24, $66
-.byte $20, $a6, $20, $e6, $20, $26, $21, $66, $21, $a6, $21, $e6, $21, $26, $22, $66
-.byte $22, $a6, $22, $e6, $22, $50, $24, $50, $24, $50, $24, $50, $24, $50, $24, $48
-.byte $20, $88, $20, $c8, $20, $08, $21, $48, $21, $88, $21, $c8, $21, $08, $22, $48
-.byte $22, $88, $22, $c8, $22, $50, $24, $50, $24, $50, $24, $50, $24, $50, $24, $6a
-.byte $20, $aa, $20, $ea, $20, $2a, $21, $6a, $21, $aa, $21, $ea, $21, $2a, $22, $6a
-.byte $22, $aa, $22, $ea, $22, $50, $24, $50, $24, $50, $24, $50, $24, $50, $24, $4c
-.byte $20, $8c, $20, $cc, $20, $0c, $21, $4c, $21, $8c, $21, $cc, $21, $0c, $22, $4c
-.byte $22, $8c, $22, $cc, $22, $50, $24, $50, $24, $50, $24, $50, $24, $50, $24, $6e
-.byte $20, $ae, $20, $ee, $20, $2e, $21, $6e, $21, $ae, $21, $ee, $21, $2e, $22, $6e
-.byte $22, $ae, $22, $ee, $22, $50, $24, $50, $24, $50, $24, $50, $24, $50, $24, $50
-.byte $20, $90, $20, $d0, $20, $10, $21, $50, $21, $90, $21, $d0, $21, $10, $22, $50
-.byte $22, $90, $22, $d0, $22, $50, $24, $50, $24, $50, $24, $50, $24, $50, $24, $04
-.byte $01, $f8, $4f, $4f, $44, $04, $02, $f8, $41, $4d, $45, $4f, $f9, $45, $52, $03
-.byte $01, $55, $55, $55, $03, $01, $ff, $ff, $ff, $08, $02, $ff, $ff, $ff, $ff, $ff
-.byte $ff, $ff, $ff, $ff, $ff, $ff, $ff, $ff, $ff, $ff, $ff, $07, $01, $53, $54, $41
-.byte $f8, $45, $ff, $d4, $05, $01, $3c, $41, $55, $53, $45
+; -----------------------------------------------------------------------------
+; _data_fb83
+; Table of little-endian 16-bit addresses (low, high) used as base positions
+; for sprite/tile placement (PPU nametable addresses in the $2000 range).
+; Each entry is two bytes: <low byte>, <high byte>.
+; Loaded by _func_8511 which may apply a small low-byte offset based on game
+; state before the value is consumed by the sprite update code (e.g., saved
+; into `sprite_flag`).
+; Binary source: data/data_fb83.bin
+; done
+_data_fb83:
+.incbin "data/data_fb83.bin"
 
 _data_fc9f_indexed:
 .byte $08, $22, $a7, $fc, $e1, $23, $73, $fc, $08, $03, $45, $d5, $44, $ff, $ff, $ff
@@ -10479,66 +9502,12 @@ _data_fccd_indexed:
 _data_fcd3_indexed:
 .byte $00, $ef, $ff, $0f, $10, $01, $f0, $f1, $ff, $11, $10, $01, $f0
 
+; done
 _data_fce0_indexed:
-.byte $00
+.incbin "data/data_fce0.bin"
 
-_data_fce1_indexed:
-.byte $f0, $04, $f2, $08, $f4, $0c, $f6, $10, $f8, $10, $fc, $10, $00, $10, $04, $10
-.byte $08, $0c, $0a, $08, $0c, $04, $0e, $00, $10, $fc, $0e, $f8, $0c, $f4, $0a, $f0
-.byte $08, $f0, $04, $f0, $00, $f0, $fc, $f0, $f8, $f4, $f6, $f8, $f4, $fc, $f2, $04
-.byte $01, $55, $55, $55, $55
-
-_data_fd16_indexed:
-.byte $3e
-
-_data_fd17_indexed:
-.byte $fd, $53, $fd, $68, $fd, $7d, $fd, $92, $fd, $ae, $fd, $ca, $fd, $e6, $fd, $02
-.byte $fe, $25, $fe, $48, $fe, $6b, $fe, $8e, $fe, $b8, $fe, $e2, $fe, $0c, $ff, $36
-.byte $ff, $67, $ff, $98, $ff, $c9, $ff, $03, $01, $00, $02, $04, $00, $04, $03, $00
-.byte $01, $04, $00, $03, $02, $00, $04, $03, $00, $02, $01, $00, $04, $03, $00, $01
-.byte $02, $00, $04, $03, $00, $02, $01, $00, $80, $03, $00, $01, $02, $00, $03, $04
-.byte $00, $02, $01, $00, $04, $03, $00, $80, $04, $00, $01, $02, $00, $04, $03, $00
-.byte $02, $01, $00, $04, $02, $00, $03, $02, $00, $04, $01, $00, $02, $03, $00, $04
-.byte $01, $00, $80, $02, $00, $03, $01, $00, $04, $02, $00, $02, $01, $03, $00, $04
-.byte $80, $02, $00, $02, $04, $01, $00, $03, $02, $03, $00, $80, $01, $04, $00, $04
-.byte $02, $03, $00, $03, $01, $04, $00, $02, $03, $01, $00, $01, $04, $02, $00, $02
-.byte $04, $01, $00, $03, $80, $02, $00, $02, $01, $03, $00, $03, $80, $02, $00, $02
-.byte $04, $01, $00, $02, $01, $04, $00, $04, $03, $01, $00, $80, $02, $04, $00, $01
-.byte $03, $01, $00, $02, $80, $04, $00, $04, $03, $01, $00, $01, $02, $04, $00, $02
-.byte $04, $03, $00, $01, $80, $01, $00, $04, $03, $02, $00, $02, $80, $04, $00, $01
-.byte $03, $02, $00, $03, $04, $01, $00, $02, $01, $03, $00, $04, $04, $03, $02, $00
-.byte $01, $80, $02, $04, $00, $04, $03, $01, $02, $00, $02, $80, $04, $03, $00, $03
-.byte $01, $02, $04, $00, $04, $04, $03, $01, $00, $01, $80, $04, $02, $00, $03, $04
-.byte $03, $02, $00, $02, $01, $80, $04, $00, $01, $80, $03, $02, $00, $03, $02, $01
-.byte $04, $00, $04, $01, $03, $02, $00, $80, $02, $04, $01, $00, $03, $01, $03, $02
-.byte $00, $01, $02, $04, $03, $00, $03, $04, $01, $02, $00, $80, $80, $03, $04, $00
-.byte $04, $01, $02, $01, $00, $03, $01, $80, $03, $00, $03, $02, $01, $04, $00, $01
-.byte $04, $02, $03, $00, $01, $01, $02, $04, $00, $04, $03, $01, $03, $00, $03, $02
-.byte $04, $02, $00, $01, $80, $03, $01, $00, $02, $80, $02, $04, $00, $04, $01, $03
-.byte $04, $00, $03, $02, $80, $02, $00, $04, $02, $01, $02, $03, $00, $03, $80, $04
-.byte $04, $01, $00, $04, $02, $03, $80, $02, $00, $03, $01, $04, $01, $03, $00, $02
-.byte $80, $80, $02, $04, $00, $01, $04, $02, $03, $02, $00, $03, $80, $01, $01, $04
-.byte $00, $04, $01, $02, $03, $01, $00, $02, $03, $01, $80, $02, $00, $01, $80, $04
-.byte $03, $04, $00, $04, $02, $01, $80, $02, $00, $03, $01, $03, $04, $01, $00, $04
-.byte $02, $80, $02, $03, $00, $01, $03, $80, $04, $02, $00, $02, $01, $03, $04, $01
-.byte $00, $03, $80, $04, $02, $03, $00, $02, $02, $03, $01, $04, $00, $01, $04, $80
-.byte $02, $03, $00, $02, $80, $03, $04, $01, $00, $03, $01, $02, $80, $02, $00, $02
-.byte $04, $03, $01, $03, $00, $04, $04, $01, $02, $03, $00, $02, $03, $80, $01, $04
-.byte $00, $01, $01, $02, $03, $02, $00, $04, $03, $80, $01, $03, $00, $01, $80, $02
-.byte $04, $02, $00, $03, $02, $01, $80, $01, $00, $04, $01, $03, $02, $04, $00, $01
-.byte $02, $03, $04, $03, $02, $00, $03, $80, $04, $01, $03, $04, $00, $01, $01, $03
-.byte $04, $80, $01, $00, $02, $04, $80, $01, $03, $04, $00, $03, $01, $02, $80, $04
-.byte $01, $00, $02, $04, $03, $01, $02, $03, $00, $03, $01, $80, $03, $04, $01, $00
-.byte $04, $02, $01, $03, $04, $04, $00, $01, $03, $04, $80, $02, $03, $00, $04, $02
-.byte $01, $80, $03, $01, $00, $01, $04, $02, $80, $02, $01, $00, $04, $03, $01, $80
-.byte $03, $04, $00, $01, $02, $03, $80, $02, $01, $00, $02, $04, $01, $04, $03, $04
-.byte $00, $03, $01, $80, $01, $04, $03, $00, $02, $80, $04, $03, $02, $01, $00, $02
-.byte $04, $02, $01, $04, $02, $00, $03, $01, $03, $02, $03, $01, $00, $02, $80, $04
-.byte $80, $04, $02, $00, $03, $01, $02, $80, $03, $01, $00, $02, $03, $04, $02, $04
-.byte $03, $00, $03, $01, $02, $04, $01, $04, $00, $02, $04, $01, $03, $02, $03, $00
-.byte $03, $03, $02, $01, $04, $01, $00, $01, $80, $04, $03, $02, $03, $00, $80, $80
-.byte $02, $01, $04, $02, $00, $02, $04, $03, $80, $80, $01, $00, $03, $01, $02, $01
-.byte $04, $03
+_data_fd16:
+.incbin "data/data_fd16.bin"
 
 ; ============================================================================
 ; CHR-ROM DATA (Graphics tiles)
