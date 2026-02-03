@@ -235,7 +235,7 @@ temp_var_c5     = $00C5
 
 temp_var_c9     = $00C9
 temp_var_ca     = $00CA
-temp_var_cb     = $00CB
+active_channels_mask  = $00CB
 temp_var_cc     = $00CC
 
 temp_var_ce     = $00CE
@@ -244,11 +244,11 @@ temp_var_d0     = $00D0
 
 temp_var_d2     = $00D2
 audio_track     = $00D3
-temp_var_d4     = $00D4
-temp_var_d5     = $00D5
+audio_data_ptr  = $00D4
+; audio_data_ptr+1  = $00D5
 
-temp_var_d7     = $00D7
-temp_var_d8     = $00D8
+sound_effect_id = $00D7
+sound_effect_trigger  = $00D8
 
 ; ============================================================================
 ; RAM VARIABLES ($0100-$07FF)
@@ -3263,16 +3263,16 @@ _label_93fe:
   and #$C0
   beq _label_941f
   lda #$01
-  sta a:temp_var_d8
+  sta a:sound_effect_trigger
   lda #$03
-  sta a:temp_var_d7
+  sta a:sound_effect_id
   lda temp_var_2b
   and #$80
   beq _label_941c
   lda #$02
-  sta a:temp_var_d7
+  sta a:sound_effect_id
 _label_941c:
-  jsr _func_e216
+  jsr play_sound_effect         ; play_sound_effect([2, 3], 1)
 _label_941f:
   lda a:temp_var_6ce
   beq _label_9427
@@ -3333,10 +3333,10 @@ _label_9469:
 _label_948f:
   inc temp_var_af
   lda #$01
-  sta a:temp_var_d8
+  sta a:sound_effect_trigger
   lda #$00
-  sta a:temp_var_d7
-  jsr _func_e216
+  sta a:sound_effect_id
+  jsr play_sound_effect         ; play_sound_effect(0, 1)
   lda #$00
   sta temp_var_b0
   rts
@@ -4023,7 +4023,7 @@ _label_9939:
   lda #$0A
   sta temp_var_ab
   inc temp_var_b0
-  jmp _label_e275
+  jmp play_sfx_4
 _label_9953:
   lda frame_counter
   ror a
@@ -4186,10 +4186,10 @@ _label_9a5a:
   bne _label_9a6d
   inc temp_var_b0
   lda #$01
-  sta a:temp_var_d8
+  sta a:sound_effect_trigger
   lda #$05
-  sta a:temp_var_d7
-  jmp _func_e216
+  sta a:sound_effect_id
+  jmp play_sound_effect         ; play_sound_effect(5, 1)
 _label_9a6d:
   cmp #$01
   bne _label_9abb
@@ -4517,10 +4517,10 @@ _label_9ca3:
   rts
 _label_9cab:
   lda #$01
-  sta a:temp_var_d8
+  sta a:sound_effect_trigger
   lda #$01
-  sta a:temp_var_d7
-  jsr _func_e216
+  sta a:sound_effect_id
+  jsr play_sound_effect         ; play_sound_effect(1, 1)
   inc temp_var_b0
   rts
 _label_9cbb:
@@ -6131,7 +6131,7 @@ _label_a7bb:
   lda #$0A
   sta temp_var_54
   inc temp_var_5b
-  jmp _label_e275
+  jmp play_sfx_4
 _label_a7d5:
   lda frame_counter
   ror a
@@ -6303,10 +6303,10 @@ _label_a8f0:
   bne _label_a903
   inc temp_var_5b
   lda #$01
-  sta a:temp_var_d8
+  sta a:sound_effect_trigger
   lda #$05
-  sta a:temp_var_d7
-  jmp _func_e216
+  sta a:sound_effect_id
+  jmp play_sound_effect         ; play_sound_effect(5, 1)
 _label_a903:
   cmp #$01
   bne _label_a951
@@ -7434,16 +7434,16 @@ _label_b132:
   and #$C0
   beq _label_b153
   lda #$01
-  sta a:temp_var_d8
+  sta a:sound_effect_trigger
   lda #$03
-  sta a:temp_var_d7
+  sta a:sound_effect_id
   lda joypad1_press
   and #$80
   beq _label_b150
   lda #$02
-  sta a:temp_var_d7
+  sta a:sound_effect_id
 _label_b150:
-  jsr _func_e216
+  jsr play_sound_effect         ; play_sound_effect([2, 3], 1)
 _label_b153:
   lda a:temp_var_5a4
   beq _label_b15b
@@ -7508,10 +7508,10 @@ _label_b1a4:
 _label_b1ca:
   inc temp_var_5a
   lda #$01
-  sta a:temp_var_d8
+  sta a:sound_effect_trigger
   lda #$00
-  sta a:temp_var_d7
-  jsr _func_e216
+  sta a:sound_effect_id
+  jsr play_sound_effect         ; play_sound_effect(0, 1)
   lda #$00
   sta temp_var_5b
   rts
@@ -8800,10 +8800,10 @@ _label_baa8:
   rts
 _label_bab0:
   lda #$01
-  sta a:temp_var_d8
+  sta a:sound_effect_trigger
   lda #$01
-  sta a:temp_var_d7
-  jsr _func_e216
+  sta a:sound_effect_id
+  jsr play_sound_effect         ; play_sound_effect(1, 1)
   inc temp_var_5b
   rts
 
@@ -8835,12 +8835,12 @@ _func_de4b:
   lda audio_track
   asl a
   tax
-  lda a:_data_e280,X
-  sta temp_var_d4
-  lda a:_data_e280+1,X
-  sta temp_var_d5
-  ldx temp_var_d4
-  ldy temp_var_d5
+  lda a:song_table,X
+  sta audio_data_ptr
+  lda a:song_table+1,X
+  sta audio_data_ptr+1
+  ldx audio_data_ptr
+  ldy audio_data_ptr+1
   jsr _func_de80          ; func_de80(e280, e280+1)
   rts
 
@@ -8851,12 +8851,12 @@ _func_de65: ; unreferenced?
   lda audio_track
   asl a
   tax
-  lda a:_data_e280,X
-  sta temp_var_d4
-  lda a:_data_e280+1,X
-  sta temp_var_d5
-  ldx temp_var_d4
-  ldy temp_var_d5
+  lda a:song_table,X
+  sta audio_data_ptr
+  lda a:song_table+1,X
+  sta audio_data_ptr+1
+  ldx audio_data_ptr
+  ldy audio_data_ptr+1
   jsr _func_e1ce
   rts
 
@@ -8871,7 +8871,7 @@ _label_de8d:
   sta a:temp_var_711,X
   dex
   bpl _label_de8d
-  sta temp_var_cb
+  sta active_channels_mask
   ldy #$08
   lda (temp_var_cc),Y
   sta a:temp_var_702
@@ -8940,7 +8940,7 @@ _label_df20:
   rts
 
 _func_df24:
-  lda temp_var_cb
+  lda active_channels_mask
   and a:temp_var_707
   beq _label_df4d
   lda APU_SND_CHN
@@ -8948,8 +8948,8 @@ _func_df24:
   bne _label_df3c
   lda a:temp_var_707
   eor #$FF
-  and temp_var_cb
-  sta temp_var_cb
+  and active_channels_mask
+  sta active_channels_mask
 _label_df3c:
   lda a:temp_var_700
   and a:temp_var_707
@@ -9205,7 +9205,7 @@ _label_e10e:
   lda #$00
   adc a:temp_var_719,X
   sta a:temp_var_719,X
-  lda temp_var_cb
+  lda active_channels_mask
   and a:temp_var_707
   beq _label_e12a
   rts
@@ -9341,89 +9341,123 @@ _label_e1f7:
   ldy temp_var_7a3
   jmp _func_de80
 
-_data_e211_indexed:
-.byte $01, $02, $04, $08, $10
+channel_bit_lookup:
+.byte 1, 2, 4, 8, 16
 
-_func_e216:
+play_sound_effect:
+; sound_effect_id = arg1
+; sound_effect_trigger = arg2
   pha
   txa
   pha
   tya
   pha
-  lda temp_var_d8
-  beq _label_e26b
+  lda sound_effect_trigger      ; Flag to trigger playback
+  beq _sfx_exit
   lda #$0F
-  sta APU_SND_CHN
+  sta APU_SND_CHN               ; Enable all channels
   lda #$00
-  sta temp_var_cb
-  lda temp_var_d7
+  sta active_channels_mask      ; Clear active channels mask
+  lda sound_effect_id
   asl a
   tax
-  lda a:_data_e290,X
-  sta temp_var_d4
-  lda a:_data_e290+1,X
-  sta temp_var_d5
-_label_e236:
+  lda a:sfx_table,X        ; Get pointer to SFX data
+  sta audio_data_ptr
+  lda a:sfx_table+1,X
+  sta audio_data_ptr+1
+_sfx_process_chunk:
   ldy #$00
-  lda (temp_var_d4),Y
+  lda (audio_data_ptr),Y          ; Get channel index
   tax
-  lda a:_data_e211_indexed,X
-  ora temp_var_cb
-  sta temp_var_cb
+  lda a:channel_bit_lookup,X    ; Convert to bit mask
+  ora active_channels_mask
+  sta active_channels_mask
   lda #$0F
   sta APU_SND_CHN
   txa
   asl a
   asl a
-  tax
+  tax                           ; X = channel * 4 (APU register offset)
   iny
-_label_e24c:
-  lda (temp_var_d4),Y
-  sta APU_PL1_VOL,X
+_sfx_write_registers:
+  lda (audio_data_ptr),Y
+  sta APU_PL1_VOL,X             ; Write to APU registers
   inx
   iny
-  cpy #$05
-  bne _label_e24c
-  lda (temp_var_d4),Y
+  cpy #$05                      ; 5 bytes: channel + 4 APU regs
+  bne _sfx_write_registers
+  lda (audio_data_ptr),Y        ; Check for end marker
   cmp #$FF
-  beq _label_e26b
+  beq _sfx_exit
   clc
-  lda temp_var_d4
+  lda audio_data_ptr            ; Advance pointer by 5 bytes
   adc #$05
-  sta temp_var_d4
-  bcc _label_e268
-  inc temp_var_d5
-_label_e268:
-  jmp _label_e236
-_label_e26b:
+  sta audio_data_ptr
+  bcc _sfx_no_carry
+  inc audio_data_ptr+1
+_sfx_no_carry:
+  jmp _sfx_process_chunk
+_sfx_exit:
   lda #$00
-  sta temp_var_d8
+  sta sound_effect_trigger
   pla
   tay
   pla
   tax
   pla
   rts
-_label_e275:
+
+play_sfx_4:
   lda #$04
-  sta temp_var_d7
+  sta sound_effect_id
   lda #$01
-  sta temp_var_d8
-  jmp _func_e216
+  sta sound_effect_trigger
+  jmp play_sound_effect         ; play_sound_effect(4, 1)
 
-_data_e280:
-.incbin "data/data_e280.bin"
-; 0xe788
-; 0xea55
-; 0xe2c0
-; 0xe2c0
-; 0xeecf
-; 0xe608
-; 0xefdb
-; 0xf12f
+song_table:
+.word _song_3, _song_4, _song_1, _song_1, _song_5, _song_2, _song_6, _song_7
 
-_data_e290:
-.incbin "data/data_e290.bin"
+sfx_table:
+.word _sfx_1, _sfx_2, _sfx_3, _sfx_4, _sfx_5, _sfx_6
+
+_sfx_1:
+.incbin "data/sfx_1.bin"
+
+_sfx_2:
+.incbin "data/sfx_2.bin"
+
+_sfx_3:
+.incbin "data/sfx_3.bin"
+
+_sfx_4:
+.incbin "data/sfx_4.bin"
+
+_sfx_5:
+.incbin "data/sfx_5.bin"
+
+_sfx_6:
+.incbin "data/sfx_6.bin"
+
+_song_1:
+.incbin "data/song_1.bin"
+
+_song_2:
+.incbin "data/song_2.bin"
+
+_song_3:
+.incbin "data/song_3.bin"
+
+_song_4:
+.incbin "data/song_4.bin"
+
+_song_5:
+.incbin "data/song_5.bin"
+
+_song_6:
+.incbin "data/song_6.bin"
+
+_song_7:
+.incbin "data/song_7.bin"
 
 _data_f1de_indexed:
 .byte $30
@@ -9436,42 +9470,33 @@ _data_f1df_indexed:
 _data_f20e_indexed:
 .byte $00, $20, $20, $23, $23, $00, $21, $01, $01, $01, $01, $01, $21
 
-; done
 _data_f21b:
 .incbin "data/data_f21b.bin"
 
-; done
 _data_f235:
 .incbin "data/data_f235.bin"
 
-; done
 _data_f26b:
 .incbin "data/data_f26b.bin"
 
-; done
 _data_f2c8:
 .incbin "data/data_f2c8.bin"
 
-; done
 _data_f2e0:
 .incbin "data/data_f2e0.bin"
 
 _data_f34e_indexed:
 .byte $01, $01, $02, $03, $04, $01, $02, $03, $04, $01, $02, $03, $04
 
-; done
 _data_f35b:
 .incbin "data/data_f35b.bin"
 
-; done
 _data_f429:
 .incbin "data/data_f429.bin"
 
-; done
 _data_f674:
 .incbin "data/data_f674.bin"
 
-; done
 _data_faff:
 .incbin "data/data_faff.bin"
 
@@ -9484,7 +9509,6 @@ _data_faff:
 ; state before the value is consumed by the sprite update code (e.g., saved
 ; into `sprite_flag`).
 ; Binary source: data/data_fb83.bin
-; done
 _data_fb83:
 .incbin "data/data_fb83.bin"
 
@@ -9502,7 +9526,6 @@ _data_fccd_indexed:
 _data_fcd3_indexed:
 .byte $00, $ef, $ff, $0f, $10, $01, $f0, $f1, $ff, $11, $10, $01, $f0
 
-; done
 _data_fce0_indexed:
 .incbin "data/data_fce0.bin"
 
